@@ -2,259 +2,193 @@
 //  SettingsView.swift
 //  VelocityRush
 //
-//  Complete Settings Page Concept
+//  Every toggle here is wired into the game.
 //
 
 import SwiftUI
 
 struct SettingsView: View {
-    @AppStorage("soundEnabled") private var soundEnabled = true
-    @AppStorage("musicEnabled") private var musicEnabled = true
-    @AppStorage("hapticEnabled") private var hapticEnabled = true
-    @AppStorage("showFPS") private var showFPS = false
-    @AppStorage("difficulty") private var difficultyLevel = 1
-    @AppStorage("colorBlindMode") private var colorBlindMode = false
-    @AppStorage("highContrast") private var highContrast = false
-    @AppStorage("reducedMotion") private var reducedMotion = false
-    @AppStorage("notifications") private var notificationsEnabled = true
-    
-    @State private var showingResetAlert = false
-    @State private var showingAbout = false
-    
+    @EnvironmentObject private var store: ProgressStore
+    @ObservedObject private var gameCenter = GameCenterManager.shared
+
+    @AppStorage(SettingsKey.soundEnabled) private var soundEnabled = true
+    @AppStorage(SettingsKey.musicEnabled) private var musicEnabled = true
+    @AppStorage(SettingsKey.hapticsEnabled) private var hapticsEnabled = true
+    @AppStorage(SettingsKey.showFPS) private var showFPS = false
+    @AppStorage(SettingsKey.difficulty) private var difficultyRaw = Difficulty.normal.rawValue
+    @AppStorage(SettingsKey.sensitivity) private var sensitivity = 1.2
+    @AppStorage(SettingsKey.colorBlindMode) private var colorBlindMode = false
+    @AppStorage(SettingsKey.highContrast) private var highContrast = false
+    @AppStorage(SettingsKey.reducedMotion) private var reducedMotion = false
+    @AppStorage(SettingsKey.notifications) private var notificationsEnabled = false
+
+    @State private var showResetConfirmation = false
+    @State private var showAbout = false
+
     var body: some View {
-        VStack(spacing: 0) {
-            // Header
-            VStack {
-                Text("Settings")
-                    .font(.largeTitle)
-                    .fontWeight(.bold)
-                    .padding(.top, 20)
-                
-                Text("Customize your experience")
-                    .font(.subheadline)
-                    .foregroundColor(.secondary)
-                    .padding(.bottom, 20)
-            }
-            
-            ScrollView {
-                VStack(spacing: 24) {
-                    // Audio Settings
+        ZStack {
+            ScreenBackground()
+            ScrollView(showsIndicators: false) {
+                VStack(spacing: 18) {
                     SettingsSection(title: "Audio", icon: "speaker.wave.2.fill") {
-                        SettingsToggle(
-                            title: "Sound Effects",
-                            subtitle: "Game sounds and feedback",
-                            isOn: $soundEnabled,
-                            icon: "speaker.2.fill"
-                        )
-                        
-                        SettingsToggle(
-                            title: "Background Music",
-                            subtitle: "Menu and game music",
-                            isOn: $musicEnabled,
-                            icon: "music.note"
-                        )
-                        
-                        SettingsToggle(
-                            title: "Haptic Feedback",
-                            subtitle: "Touch vibration responses",
-                            isOn: $hapticEnabled,
-                            icon: "iphone.radiowaves.left.and.right"
-                        )
+                        SettingsToggle(title: "Sound Effects", subtitle: "Synthesised arcade SFX", icon: "speaker.wave.3.fill", isOn: $soundEnabled)
+                        SettingsToggle(title: "Music", subtitle: "Synthwave groove while you play", icon: "music.note", isOn: $musicEnabled)
+                        SettingsToggle(title: "Haptics", subtitle: "Feel every near miss", icon: "iphone.radiowaves.left.and.right", isOn: $hapticsEnabled)
                     }
-                    
-                    // Gameplay Settings
+
                     SettingsSection(title: "Gameplay", icon: "gamecontroller.fill") {
-                        VStack(alignment: .leading, spacing: 12) {
-                            HStack {
-                                Image(systemName: "speedometer")
-                                    .foregroundColor(.purple)
-                                    .frame(width: 24)
-                                
-                                VStack(alignment: .leading, spacing: 2) {
-                                    Text("Difficulty")
-                                        .font(.subheadline)
-                                        .fontWeight(.medium)
-                                    Text("How challenging the game starts")
-                                        .font(.caption)
-                                        .foregroundColor(.secondary)
+                        VStack(alignment: .leading, spacing: 10) {
+                            SettingsLabel(title: "Difficulty", subtitle: "Higher difficulty = bigger score multiplier", icon: "speedometer")
+                            Picker("Difficulty", selection: $difficultyRaw) {
+                                ForEach(Difficulty.allCases) { level in
+                                    Text(level.title).tag(level.rawValue)
                                 }
-                                
-                                Spacer()
                             }
-                            
-                            Picker("Difficulty", selection: $difficultyLevel) {
-                                Text("Easy").tag(0)
-                                Text("Normal").tag(1)
-                                Text("Hard").tag(2)
-                                Text("Expert").tag(3)
-                            }
-                            .pickerStyle(SegmentedPickerStyle())
+                            .pickerStyle(.segmented)
+                            Text("Score ×\((Difficulty(rawValue: difficultyRaw) ?? .normal).scoreMultiplier.compactString) · Daily Runs always use Normal")
+                                .font(VR.display(11, weight: .semibold))
+                                .foregroundStyle(VR.secondaryText)
                         }
-                        .padding(.vertical, 4)
-                        
-                        SettingsToggle(
-                            title: "Show FPS Counter",
-                            subtitle: "Display frame rate (for debugging)",
-                            isOn: $showFPS,
-                            icon: "gauge"
-                        )
+                        VStack(alignment: .leading, spacing: 10) {
+                            SettingsLabel(title: "Drag Sensitivity", subtitle: "How far the dot moves per swipe", icon: "hand.draw.fill")
+                            HStack {
+                                Image(systemName: "tortoise.fill").foregroundStyle(VR.secondaryText)
+                                Slider(value: $sensitivity, in: 0.7...2.0, step: 0.1)
+                                    .tint(VR.cyan)
+                                Image(systemName: "hare.fill").foregroundStyle(VR.secondaryText)
+                            }
+                            Text("\(sensitivity, specifier: "%.1f")×")
+                                .font(VR.display(11, weight: .semibold))
+                                .foregroundStyle(VR.secondaryText)
+                        }
+                        SettingsToggle(title: "Show FPS", subtitle: "Performance overlay", icon: "speedometer", isOn: $showFPS)
                     }
-                    
-                    // Accessibility Settings
+
                     SettingsSection(title: "Accessibility", icon: "accessibility") {
-                        SettingsToggle(
-                            title: "Color Blind Support",
-                            subtitle: "Enhanced color contrast for dots",
-                            isOn: $colorBlindMode,
-                            icon: "eyeglasses"
-                        )
-                        
-                        SettingsToggle(
-                            title: "High Contrast Mode",
-                            subtitle: "Stronger visual distinction",
-                            isOn: $highContrast,
-                            icon: "circle.lefthalf.filled"
-                        )
-                        
-                        SettingsToggle(
-                            title: "Reduce Motion",
-                            subtitle: "Minimize animations and effects",
-                            isOn: $reducedMotion,
-                            icon: "slowmo"
-                        )
+                        SettingsToggle(title: "Colour-Blind Friendly", subtitle: "Orange/yellow hazards with outlines", icon: "eye.fill", isOn: $colorBlindMode)
+                        SettingsToggle(title: "High Contrast", subtitle: "Bolder hazards, darker sky", icon: "circle.lefthalf.filled", isOn: $highContrast)
+                        SettingsToggle(title: "Reduce Motion", subtitle: "No screen shake, fewer particles", icon: "figure.walk.motion", isOn: $reducedMotion)
                     }
-                    
-                    // Notifications Settings
+
                     SettingsSection(title: "Notifications", icon: "bell.fill") {
-                        SettingsToggle(
-                            title: "Fuel Notifications",
-                            subtitle: "Alert when fuel is refilled",
-                            isOn: $notificationsEnabled,
-                            icon: "bell"
-                        )
+                        SettingsToggle(title: "Daily Reminder", subtitle: "A nudge at 6pm when a new Daily Run is live", icon: "bell.badge.fill", isOn: $notificationsEnabled)
                     }
-                    
-                    // Data & Privacy
-                    SettingsSection(title: "Data & Privacy", icon: "lock.shield") {
-                        SettingsButton(
-                            title: "Reset All Statistics",
-                            subtitle: "Clear all game progress and stats",
-                            icon: "trash",
-                            color: .red
-                        ) {
-                            showingResetAlert = true
+
+                    SettingsSection(title: "Game Center", icon: "person.2.fill") {
+                        HStack(spacing: 12) {
+                            SettingsLabel(title: gameCenter.isAuthenticated ? (gameCenter.playerName ?? "Signed in") : "Not signed in",
+                                          subtitle: gameCenter.isAuthenticated ? "Global leaderboards & achievements are on"
+                                                                               : "Sign in via the Settings app to compete globally",
+                                          icon: "gamecontroller.fill")
+                            Spacer()
+                            Circle()
+                                .fill(gameCenter.isAuthenticated ? VR.green : VR.secondaryText)
+                                .frame(width: 10, height: 10)
                         }
-                        
-                        SettingsButton(
-                            title: "Export Game Data",
-                            subtitle: "Save your stats to Files app",
-                            icon: "square.and.arrow.up",
-                            color: .blue
-                        ) {
-                            exportGameData()
+                        if gameCenter.isAuthenticated {
+                            SettingsButton(title: "Open Game Center", icon: "arrow.up.right.square", tint: VR.cyan) {
+                                gameCenter.showDashboard()
+                            }
                         }
                     }
-                    
-                    // Support & Info
-                    SettingsSection(title: "Support & Info", icon: "questionmark.circle") {
-                        SettingsButton(
-                            title: "About Velocity Rush",
-                            subtitle: "Version info and credits",
-                            icon: "info.circle",
-                            color: .gray
-                        ) {
-                            showingAbout = true
-                        }
-                        
-                        SettingsButton(
-                            title: "Rate This Game",
-                            subtitle: "Leave a review on the App Store",
-                            icon: "star",
-                            color: .orange
-                        ) {
-                            rateApp()
-                        }
-                        
-                        SettingsButton(
-                            title: "Contact Support",
-                            subtitle: "Get help or report issues",
-                            icon: "envelope",
-                            color: .green
-                        ) {
-                            contactSupport()
+
+                    SettingsSection(title: "Data", icon: "externaldrive.fill") {
+                        SettingsButton(title: "Reset All Progress", icon: "trash.fill", tint: VR.pink) {
+                            showResetConfirmation = true
                         }
                     }
+
+                    SettingsSection(title: "About", icon: "info.circle.fill") {
+                        SettingsButton(title: "About Velocity Rush", icon: "sparkles", tint: VR.cyan) {
+                            showAbout = true
+                        }
+                    }
+
+                    Text("Velocity Rush \(appVersion)")
+                        .font(VR.display(12, weight: .semibold))
+                        .foregroundStyle(VR.secondaryText)
+                        .padding(.top, 4)
                 }
-                .padding(.horizontal, 20)
-                .padding(.top, 10)
-                .padding(.bottom, 30)
+                .padding(20)
             }
         }
-        .background(Color(.systemBackground))
-        .alert("Reset All Data?", isPresented: $showingResetAlert) {
-            Button("Cancel", role: .cancel) { }
+        .navigationTitle("Settings")
+        .navigationBarTitleDisplayMode(.large)
+        .onChange(of: musicEnabled) { _, enabled in
+            if !enabled { SoundManager.shared.stopMusic() }
+        }
+        .onChange(of: soundEnabled) { _, enabled in
+            if enabled { SoundManager.shared.play(.tap) }
+        }
+        .onChange(of: hapticsEnabled) { _, enabled in
+            if enabled { HapticsManager.shared.play(.medium) }
+        }
+        .onChange(of: notificationsEnabled) { _, enabled in
+            NotificationManager.setDailyReminder(enabled: enabled) { granted in
+                if enabled && !granted { notificationsEnabled = false }
+            }
+        }
+        .alert("Reset all progress?", isPresented: $showResetConfirmation) {
             Button("Reset", role: .destructive) {
-                resetAllData()
+                store.resetAllProgress()
+                HapticsManager.shared.play(.warning)
             }
+            Button("Cancel", role: .cancel) {}
         } message: {
-            Text("This will permanently delete all your game statistics, achievements, and progress. This cannot be undone.")
+            Text("This permanently deletes your coins, cosmetics, stats, achievements and records. This cannot be undone.")
         }
-        .sheet(isPresented: $showingAbout) {
+        .sheet(isPresented: $showAbout) {
             AboutView()
         }
     }
-    
-    private func resetAllData() {
-        // Reset UserDefaults
-        let domain = Bundle.main.bundleIdentifier!
-        UserDefaults.standard.removePersistentDomain(forName: domain)
-        UserDefaults.standard.synchronize()
-        
-        // Reset managers
-        GameDataManager.shared.stats = GameStats()
-        GameDataManager.shared.achievements = []
-        GameDataManager.shared.initializeAchievements()
-        FuelManager.shared.currentFuel = 5
-    }
-    
-    private func exportGameData() {
-        // Implementation for exporting game data as JSON
-    }
-    
-    private func rateApp() {
-        // Implementation for App Store rating
-    }
-    
-    private func contactSupport() {
-        // Implementation for email support
+
+    private var appVersion: String {
+        let version = Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String ?? "1.0"
+        let build = Bundle.main.object(forInfoDictionaryKey: "CFBundleVersion") as? String ?? "1"
+        return "\(version) (\(build))"
     }
 }
+
+// MARK: - Building blocks
 
 struct SettingsSection<Content: View>: View {
     let title: String
     let icon: String
     @ViewBuilder let content: Content
-    
+
     var body: some View {
-        VStack(alignment: .leading, spacing: 16) {
-            HStack {
-                Image(systemName: icon)
-                    .foregroundColor(.blue)
-                    .font(.headline)
-                
-                Text(title)
-                    .font(.headline)
-                    .fontWeight(.semibold)
-                
-                Spacer()
-            }
-            
-            VStack(spacing: 12) {
+        VStack(alignment: .leading, spacing: 12) {
+            SectionTitle(text: title, icon: icon)
+            VStack(spacing: 16) {
                 content
             }
-            .padding()
-            .background(Color(.systemGray6))
-            .cornerRadius(12)
+            .padding(16)
+            .glassCard(cornerRadius: 18)
+        }
+    }
+}
+
+struct SettingsLabel: View {
+    let title: String
+    let subtitle: String
+    let icon: String
+
+    var body: some View {
+        HStack(spacing: 12) {
+            Image(systemName: icon)
+                .font(.system(size: 15, weight: .bold))
+                .foregroundStyle(VR.cyan)
+                .frame(width: 32, height: 32)
+                .background(RoundedRectangle(cornerRadius: 9).fill(VR.cyan.opacity(0.15)))
+            VStack(alignment: .leading, spacing: 2) {
+                Text(title)
+                    .font(VR.display(15, weight: .bold))
+                    .foregroundStyle(.white)
+                Text(subtitle)
+                    .font(VR.display(12, weight: .medium))
+                    .foregroundStyle(VR.secondaryText)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
         }
     }
 }
@@ -262,170 +196,109 @@ struct SettingsSection<Content: View>: View {
 struct SettingsToggle: View {
     let title: String
     let subtitle: String
-    @Binding var isOn: Bool
     let icon: String
-    
+    @Binding var isOn: Bool
+
     var body: some View {
-        HStack {
-            Image(systemName: icon)
-                .foregroundColor(.blue)
-                .frame(width: 24)
-            
-            VStack(alignment: .leading, spacing: 2) {
-                Text(title)
-                    .font(.subheadline)
-                    .fontWeight(.medium)
-                
-                Text(subtitle)
-                    .font(.caption)
-                    .foregroundColor(.secondary)
-            }
-            
-            Spacer()
-            
-            Toggle("", isOn: $isOn)
-                .labelsHidden()
+        Toggle(isOn: $isOn) {
+            SettingsLabel(title: title, subtitle: subtitle, icon: icon)
         }
-        .padding(.vertical, 4)
+        .tint(VR.cyan)
     }
 }
 
 struct SettingsButton: View {
     let title: String
-    let subtitle: String
     let icon: String
-    let color: Color
+    var tint: Color = VR.cyan
     let action: () -> Void
-    
+
     var body: some View {
         Button(action: action) {
-            HStack {
+            HStack(spacing: 12) {
                 Image(systemName: icon)
-                    .foregroundColor(color)
-                    .frame(width: 24)
-                
-                VStack(alignment: .leading, spacing: 2) {
-                    Text(title)
-                        .font(.subheadline)
-                        .fontWeight(.medium)
-                        .foregroundColor(.primary)
-                    
-                    Text(subtitle)
-                        .font(.caption)
-                        .foregroundColor(.secondary)
-                }
-                
+                    .font(.system(size: 15, weight: .bold))
+                    .foregroundStyle(tint)
+                    .frame(width: 32, height: 32)
+                    .background(RoundedRectangle(cornerRadius: 9).fill(tint.opacity(0.15)))
+                Text(title)
+                    .font(VR.display(15, weight: .bold))
+                    .foregroundStyle(tint)
                 Spacer()
-                
                 Image(systemName: "chevron.right")
-                    .foregroundColor(.secondary)
-                    .font(.caption)
+                    .font(.system(size: 13, weight: .bold))
+                    .foregroundStyle(VR.secondaryText)
             }
-            .padding(.vertical, 4)
         }
-        .buttonStyle(PlainButtonStyle())
+        .buttonStyle(PressableStyle())
     }
 }
+
+// MARK: - About
 
 struct AboutView: View {
+    @Environment(\.dismiss) private var dismiss
+
     var body: some View {
-        NavigationView {
-            ScrollView {
-                VStack(spacing: 24) {
-                    // App Icon and Info
-                    VStack(spacing: 12) {
-                        Image(systemName: "gamecontroller.fill")
-                            .font(.system(size: 80))
-                            .foregroundColor(.blue)
-                        
-                        Text("Velocity Rush")
-                            .font(.title)
-                            .fontWeight(.bold)
-                        
-                        Text("Version 1.0.0")
-                            .font(.subheadline)
-                            .foregroundColor(.secondary)
-                        
-                        Text("The ultimate dodging challenge")
-                            .font(.caption)
-                            .foregroundColor(.secondary)
-                            .multilineTextAlignment(.center)
-                    }
-                    .padding(.top, 20)
-                    
-                    // Credits
-                    VStack(alignment: .leading, spacing: 16) {
-                        Text("Credits")
-                            .font(.headline)
-                        
-                        VStack(spacing: 8) {
-                            CreditRow(role: "Developer", name: "Christopher Dornan")
-                            CreditRow(role: "Design", name: "Built with SwiftUI")
-                            CreditRow(role: "Engine", name: "SpriteKit")
+        NavigationStack {
+            ZStack {
+                ScreenBackground()
+                ScrollView {
+                    VStack(spacing: 22) {
+                        Logo().padding(.top, 20)
+                        Text("The ultimate dodging challenge.")
+                            .font(VR.display(16, weight: .semibold))
+                            .foregroundStyle(VR.secondaryText)
+
+                        VStack(alignment: .leading, spacing: 12) {
+                            SectionTitle(text: "How to play", icon: "gamecontroller.fill")
+                            aboutRow("hand.draw.fill", "Drag anywhere on screen to move your dot.")
+                            aboutRow("circle.fill", "Dodge the falling hazards. Watch for warnings – meteors are fast!")
+                            aboutRow("scope", "Skim past hazards for near-miss points. Closer = PERFECT.")
+                            aboutRow("multiply.circle.fill", "Near misses and stars build your multiplier up to ×6.")
+                            aboutRow("bolt.fill", "Power-ups: Shield, Slow-Mo, Magnet, Shrink and Nova.")
                         }
-                    }
-                    
-                    // Technical Info
-                    VStack(alignment: .leading, spacing: 16) {
-                        Text("Technical")
-                            .font(.headline)
-                        
-                        VStack(spacing: 8) {
-                            InfoRow(label: "Framework", value: "SwiftUI + SpriteKit")
-                            InfoRow(label: "Platform", value: "iOS 15.0+")
-                            InfoRow(label: "Build", value: "2025.09.01")
+                        .padding(18)
+                        .glassCard()
+
+                        VStack(alignment: .leading, spacing: 12) {
+                            SectionTitle(text: "Credits", icon: "person.fill")
+                            aboutRow("person.crop.circle", "Created by Christopher Dornan")
+                            aboutRow("hammer.fill", "Built with SwiftUI & SpriteKit")
+                            aboutRow("waveform", "All sound and music synthesised in code")
                         }
+                        .padding(18)
+                        .glassCard()
+
+                        Text("Made with ❤️ for iOS")
+                            .font(VR.display(13, weight: .semibold))
+                            .foregroundStyle(VR.secondaryText)
                     }
-                    
-                    Spacer()
-                    
-                    Text("Made with ❤️ for iOS")
-                        .font(.caption)
-                        .foregroundColor(.secondary)
+                    .padding(20)
                 }
-                .padding(20)
             }
-            .navigationTitle("About")
-            .navigationBarTitleDisplayMode(.inline)
             .toolbar {
-                ToolbarItem(placement: .navigationBarTrailing) {
-                    Button("Done") {
-                        // Dismiss
-                    }
+                ToolbarItem(placement: .confirmationAction) {
+                    Button("Done") { dismiss() }
                 }
             }
         }
     }
-}
 
-struct CreditRow: View {
-    let role: String
-    let name: String
-    
-    var body: some View {
-        HStack {
-            Text(role)
-                .foregroundColor(.secondary)
-            Spacer()
-            Text(name)
-                .fontWeight(.medium)
+    private func aboutRow(_ icon: String, _ text: String) -> some View {
+        HStack(alignment: .top, spacing: 12) {
+            Image(systemName: icon)
+                .foregroundStyle(VR.cyan)
+                .frame(width: 22)
+            Text(text)
+                .font(VR.display(14, weight: .medium))
+                .foregroundStyle(.white.opacity(0.85))
+                .fixedSize(horizontal: false, vertical: true)
         }
-        .font(.subheadline)
     }
 }
 
-struct InfoRow: View {
-    let label: String
-    let value: String
-    
-    var body: some View {
-        HStack {
-            Text(label)
-                .foregroundColor(.secondary)
-            Spacer()
-            Text(value)
-                .fontWeight(.medium)
-        }
-        .font(.subheadline)
-    }
+#Preview {
+    NavigationStack { SettingsView() }
+        .environmentObject(ProgressStore.shared)
 }
