@@ -46,11 +46,11 @@ final class GameScene: SKScene {
     private let effectLayer = SKNode()
     private let warningLayer = SKNode()
     private let bannerLayer = SKNode()
-    private let playerNode = SKSpriteNode()
+    private var avatar: PlayerAvatarNode!
+    private var ribbon: RibbonTrailNode!
     private let shieldNode = SKShapeNode(circleOfRadius: 25)
     private let slowMoOverlay = SKSpriteNode(color: .clear, size: .zero)
     private let flashNode = SKSpriteNode(color: .white, size: .zero)
-    private var trailEmitter: SKEmitterNode?
     private var vignetteNode: SKSpriteNode?
     private var edgeNodes: [SKSpriteNode] = []
     private var gridLines: [SKSpriteNode] = []
@@ -64,6 +64,7 @@ final class GameScene: SKScene {
 
     private var lastUpdateTime: TimeInterval = 0
     private var visualTime: Double = 0
+    private var frameDelta: Double = 1.0 / 60.0
     private var isRunPaused = false
     private var didReportFinish = false
     private var pendingFinishAt: Double?
@@ -139,13 +140,11 @@ final class GameScene: SKScene {
         [pickupLayer, hazardLayer, effectLayer, warningLayer].forEach { worldNode.addChild($0) }
 
         // Player
-        playerNode.texture = TextureFactory.skin(skin)
-        let playerSide = CGFloat(GameEngine.basePlayerRadius) * 2 * TextureFactory.glowRatio
-        playerNode.size = CGSize(width: playerSide, height: playerSide)
-        playerNode.zPosition = 30
-        playerNode.position = engine.playerPosition.cgPoint
-        if skin.style == .prism { playerNode.colorBlendFactor = 1 }
-        worldNode.addChild(playerNode)
+        avatar = PlayerAvatarNode(look: skin, reducedMotion: settings.reducedMotion)
+        avatar.zPosition = 30
+        avatar.position = engine.playerPosition.cgPoint
+        avatar.setParticleTarget(worldNode)
+        worldNode.addChild(avatar)
 
         shieldNode.strokeColor = PickupKind.shield.color.uiColor
         shieldNode.fillColor = PickupKind.shield.color.uiColor.withAlphaComponent(0.12)
@@ -207,91 +206,15 @@ final class GameScene: SKScene {
     }
 
     private func buildTrail() {
-        trailEmitter?.removeFromParent()
-        trailEmitter = nil
-        guard trail.style != .none else { return }
-
-        let emitter = SKEmitterNode()
-        emitter.particleTexture = TextureFactory.softDot
-        emitter.particleColor = trail.color.uiColor
-        emitter.particleColorBlendFactor = 1
-        emitter.particleBlendMode = .add
-        emitter.emissionAngle = -.pi / 2
-        emitter.particlePositionRange = CGVector(dx: 6, dy: 6)
-        emitter.targetNode = worldNode
-        emitter.zPosition = 29
-
-        let reduce: CGFloat = settings.reducedMotion ? 0.5 : 1
-        switch trail.style {
-        case .none:
-            break
-        case .spark:
-            emitter.particleBirthRate = 45 * reduce
-            emitter.particleLifetime = 0.5
-            emitter.particleSpeed = 90
-            emitter.particleSpeedRange = 40
-            emitter.emissionAngleRange = 0.6
-            emitter.particleScale = 0.35
-            emitter.particleScaleRange = 0.2
-            emitter.particleAlphaSpeed = -2
-        case .comet:
-            emitter.particleBirthRate = 140 * reduce
-            emitter.particleLifetime = 0.55
-            emitter.particleSpeed = 160
-            emitter.particleSpeedRange = 20
-            emitter.emissionAngleRange = 0.12
-            emitter.particleScale = 0.9
-            emitter.particleScaleSpeed = -1.5
-            emitter.particleAlphaSpeed = -1.6
-            emitter.particleColorSequence = SKKeyframeSequence(
-                keyframeValues: [UIColor.white, trail.color.uiColor, RGBColor(hex: 0xFF2E2E).uiColor],
-                times: [0, 0.3, 1])
-        case .bubbles:
-            emitter.particleTexture = TextureFactory.bubble
-            emitter.particleBirthRate = 14 * reduce
-            emitter.particleLifetime = 1.1
-            emitter.particleSpeed = 70
-            emitter.particleSpeedRange = 30
-            emitter.emissionAngleRange = 0.9
-            emitter.particleScale = 0.35
-            emitter.particleScaleRange = 0.25
-            emitter.particleScaleSpeed = 0.3
-            emitter.particleAlphaSpeed = -0.9
-            emitter.particleBlendMode = .alpha
-        case .afterimage:
-            emitter.particleTexture = TextureFactory.skin(skin)
-            emitter.particleBirthRate = 32 * reduce
-            emitter.particleLifetime = 0.3
-            emitter.particleSpeed = 0
-            emitter.particlePositionRange = .zero
-            emitter.particleScale = CGFloat(GameEngine.basePlayerRadius * 2) * TextureFactory.glowRatio / TextureFactory.orbCanvas
-            emitter.particleAlpha = 0.45
-            emitter.particleAlphaSpeed = -1.6
-            emitter.particleColor = skin.glow.uiColor
-        case .rainbow:
-            emitter.particleBirthRate = 110 * reduce
-            emitter.particleLifetime = 0.6
-            emitter.particleSpeed = 130
-            emitter.particleSpeedRange = 20
-            emitter.emissionAngleRange = 0.2
-            emitter.particleScale = 0.6
-            emitter.particleScaleSpeed = -0.8
-            emitter.particleAlphaSpeed = -1.5
-        case .stardust:
-            emitter.particleTexture = TextureFactory.tinyStar
-            emitter.particleBirthRate = 50 * reduce
-            emitter.particleLifetime = 0.9
-            emitter.particleSpeed = 70
-            emitter.particleSpeedRange = 50
-            emitter.emissionAngleRange = 1.4
-            emitter.particleScale = 0.5
-            emitter.particleScaleRange = 0.3
-            emitter.particleRotationSpeed = 4
-            emitter.particleAlphaSpeed = -1.1
-        }
-        emitter.position = playerNode.position
-        worldNode.addChild(emitter)
-        trailEmitter = emitter
+        ribbon?.removeFromParent()
+        let trailNode = RibbonTrailNode(look: trail, reducedMotion: settings.reducedMotion)
+        trailNode.zPosition = 29
+        trailNode.ghostTexture = avatar.bodyTexture
+        trailNode.ghostSize = avatar.bodySize
+        worldNode.addChild(trailNode)
+        trailNode.setParticleTarget(worldNode)
+        trailNode.reset(at: engine.playerPosition.cgPoint)
+        ribbon = trailNode
     }
 
     private func buildVignette() {
@@ -346,11 +269,11 @@ final class GameScene: SKScene {
         bannerLayer.removeAllChildren()
         pendingFinishAt = nil
 
-        playerNode.removeAllActions()
-        playerNode.isHidden = false
-        playerNode.alpha = 1
-        playerNode.setScale(1)
-        playerNode.position = engine.playerPosition.cgPoint
+        avatar.isHidden = false
+        avatar.alpha = 1
+        avatar.setScale(1)
+        avatar.position = engine.playerPosition.cgPoint
+        avatar.setEmitting(true)
         buildTrail()
         vignetteNode?.removeFromParent()
         vignetteNode = nil
@@ -367,7 +290,7 @@ final class GameScene: SKScene {
     func setRunPaused(_ paused: Bool) {
         isRunPaused = paused
         worldNode.isPaused = paused
-        trailEmitter?.isPaused = paused
+        ribbon?.isPaused = paused
         lastUpdateTime = 0
         activeTouch = nil
     }
@@ -415,6 +338,7 @@ final class GameScene: SKScene {
         guard !isRunPaused, delta > 0 else { return }
 
         visualTime += delta
+        frameDelta = delta
         engine.step(delta)
         handle(engine.drainEvents())
         syncHazards()
@@ -568,32 +492,19 @@ final class GameScene: SKScene {
     }
 
     private func updatePlayer() {
-        guard !playerNode.isHidden else { return }
+        guard !avatar.isHidden else { return }
         let position = engine.playerPosition.cgPoint
-        playerNode.position = position
-        let scale = CGFloat(engine.playerRadius / GameEngine.basePlayerRadius)
-        playerNode.xScale = scale
-        playerNode.yScale = scale
-
-        if engine.invulnerability > 0 {
-            playerNode.alpha = sin(visualTime * 32) > 0 ? 1 : 0.3
-        } else {
-            playerNode.alpha = 1
-        }
-
-        if skin.style == .prism {
-            playerNode.color = RGBColor.hsb(visualTime * 0.35, 0.75, 1).uiColor
-        }
+        avatar.position = position
+        avatar.setScale(CGFloat(engine.playerRadius / GameEngine.basePlayerRadius))
+        avatar.alpha = engine.invulnerability > 0 ? (sin(visualTime * 32) > 0 ? 1 : 0.3) : 1
+        avatar.update(time: visualTime)
 
         shieldNode.isHidden = !engine.hasShield
         shieldNode.position = position
 
-        if let trailEmitter {
-            trailEmitter.position = position
-            if trail.style == .rainbow {
-                trailEmitter.particleColor = RGBColor.hsb(visualTime * 0.8, 0.85, 1).uiColor
-            }
-        }
+        // The blade streams behind faster as the rush speeds up.
+        let drift = CGFloat(260 + engine.intensity * 260) * (engine.isSlowMotion ? 0.45 : 1)
+        ribbon.update(head: position, dt: frameDelta, time: visualTime, drift: drift)
 
         vignetteNode?.position = position
 
@@ -769,9 +680,11 @@ final class GameScene: SKScene {
 
     private func playerDeath(at hazardPosition: Vec2) {
         let position = engine.playerPosition
-        playerNode.isHidden = true
+        avatar.isHidden = true
+        avatar.setEmitting(false)
         shieldNode.isHidden = true
-        trailEmitter?.particleBirthRate = 0
+        ribbon.setEmitting(false)
+        ribbon.run(.fadeOut(withDuration: 0.4))
         burst(at: position, color: skin.glow, count: 60, speed: 320, lifetime: 0.9)
         burst(at: position, color: hazardColor, count: 40, speed: 240, lifetime: 0.7)
         shockwave(at: position, color: hazardColor, radius: 220)

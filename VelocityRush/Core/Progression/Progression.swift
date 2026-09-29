@@ -34,6 +34,14 @@ enum PurchaseResult: Equatable {
     case locked
 }
 
+/// What a mission claim paid out.
+struct MissionClaim: Equatable {
+    var coins = 0
+    var xp = 0
+    /// True if this claim cleared the day (all-clear bonus included in `coins`).
+    var allClear = false
+}
+
 enum Progression {
     static let leaderboardSize = 10
 
@@ -51,10 +59,13 @@ enum Progression {
         profile.daily.missions = MissionGenerator.missions(for: today)
         profile.daily.lastLoginRewardDay = lastLogin
 
-        // A missed day breaks the login streak.
+        // Missed days break streaks.
         let yesterday = DailyChallenge.previousDayKey(before: now, calendar: calendar)
         if lastLogin != yesterday && lastLogin != today {
             profile.stats.loginStreak = 0
+        }
+        if profile.lastAllClearDay != yesterday && profile.lastAllClearDay != today {
+            profile.stats.allClearStreak = 0
         }
         return true
     }
@@ -82,6 +93,7 @@ enum Progression {
         profile.daily.lastLoginRewardDay = DailyChallenge.dayKey(for: now, calendar: calendar)
         grant(coins, to: &profile)
         let unlocked = evaluateAchievements(&profile, now: now)
+        unlockEarnedCosmetics(&profile)
         return (coins, unlocked.map(\.id))
     }
 
@@ -116,6 +128,7 @@ enum Progression {
         var rewards = RunRewards()
         rewards.levelBefore = profile.level
         rewards.previousBest = profile.stats.best(for: run.mode)
+        let cosmeticsBefore = profile.unlockedCosmetics
 
         updateStats(&profile.stats, with: run, dailyAttemptsBefore: profile.daily.dailyRunAttempts,
                     isTodaysDaily: run.dailyKey == profile.daily.dayKey)
@@ -152,21 +165,17 @@ enum Progression {
         grant(earned.stars + earned.score, to: &profile)
 
         rewards.xpGained = xp(for: run)
-        profile.xp += rewards.xpGained
+        rewards.coinsFromLevelUps = addXP(rewards.xpGained, to: &profile)
         rewards.levelAfter = profile.level
-        if rewards.levelAfter > rewards.levelBefore {
-            let bonus = ((rewards.levelBefore + 1)...rewards.levelAfter).reduce(0) { $0 + Leveling.levelUpReward(for: $1) }
-            rewards.coinsFromLevelUps = bonus
-            grant(bonus, to: &profile)
-        }
-        rewards.newCosmetics.append(contentsOf: unlockLevelCosmetics(&profile))
 
-        // Achievements
+        // Achievements, then anything they (or the new stats) unlock
         let unlocked = evaluateAchievements(&profile, now: now)
         rewards.newAchievements = unlocked.map(\.id)
         rewards.coinsFromAchievements = unlocked.reduce(0) { $0 + $1.reward }
-        rewards.newCosmetics.append(contentsOf: unlocked.compactMap { $0.cosmeticReward?.id })
-
+        unlockEarnedCosmetics(&profile)
+        rewards.newCosmetics = Cosmetic.catalog.map(\.id).filter {
+            profile.unlockedCosmetics.contains($0) && !cosmeticsBefore.contains($0)
+        }
         return rewards
     }
 
@@ -224,9 +233,24 @@ enum Progression {
         return board.firstIndex { $0.id == entry.id }.map { $0 + 1 }
     }
 
+    // MARK: XP
+
+    /// Adds XP and pays level-up coins. Returns the coins granted.
+    @discardableResult
+    static func addXP(_ amount: Int, to profile: inout PlayerProfile) -> Int {
+        guard amount > 0 else { return 0 }
+        let before = profile.level
+        profile.xp += amount
+        let after = profile.level
+        guard after > before else { return 0 }
+        let bonus = ((before + 1)...after).reduce(0) { $0 + Leveling.levelUpReward(for: $1) }
+        grant(bonus, to: &profile)
+        return bonus
+    }
+
     // MARK: Achievements & unlocks
 
-    /// Unlocks every achievement whose goal is met. Grants coins and cosmetics.
+    /// Unlocks every achievement whose goal is met and grants its coins.
     @discardableResult
     static func evaluateAchievements(_ profile: inout PlayerProfile, now: Date) -> [AchievementDefinition] {
         var unlocked: [AchievementDefinition] = []
@@ -234,21 +258,26 @@ enum Progression {
             guard definition.isMet(by: profile.stats) else { continue }
             profile.unlockedAchievements[definition.id] = now
             grant(definition.reward, to: &profile)
-            if let cosmetic = definition.cosmeticReward {
-                profile.unlockedCosmetics.insert(cosmetic.id)
-            }
             unlocked.append(definition)
         }
         return unlocked
     }
 
-    static func unlockLevelCosmetics(_ profile: inout PlayerProfile) -> [String] {
-        let level = profile.level
+    static func gatesMet(_ cosmetic: Cosmetic, profile: PlayerProfile) -> Bool {
+        cosmetic.gates.allSatisfy { $0.isMet(by: profile) }
+    }
+
+    /// True if the item is for sale right now (gates met, not owned). Ignores the coin balance.
+    static func isPurchasable(_ cosmetic: Cosmetic, profile: PlayerProfile) -> Bool {
+        cosmetic.price != nil && !profile.isUnlocked(cosmetic) && gatesMet(cosmetic, profile: profile)
+    }
+
+    /// Grants every earned-only cosmetic whose gates are now met. Returns the new ids.
+    @discardableResult
+    static func unlockEarnedCosmetics(_ profile: inout PlayerProfile) -> [String] {
         var newlyUnlocked: [String] = []
-        for cosmetic in Cosmetic.catalog {
-            if case .level(let required) = cosmetic.requirement,
-               level >= required,
-               !profile.unlockedCosmetics.contains(cosmetic.id) {
+        for cosmetic in Cosmetic.catalog where cosmetic.isEarnedOnly && !profile.unlockedCosmetics.contains(cosmetic.id) {
+            if gatesMet(cosmetic, profile: profile) {
                 profile.unlockedCosmetics.insert(cosmetic.id)
                 newlyUnlocked.append(cosmetic.id)
             }
@@ -267,13 +296,14 @@ enum Progression {
     static func purchase(_ cosmeticID: String, profile: inout PlayerProfile, now: Date) -> PurchaseResult {
         guard let cosmetic = Cosmetic.find(cosmeticID) else { return .locked }
         guard !profile.isUnlocked(cosmetic) else { return .alreadyOwned }
-        guard let price = cosmetic.price else { return .locked }
+        guard let price = cosmetic.price, gatesMet(cosmetic, profile: profile) else { return .locked }
         guard profile.coins >= price else { return .notEnoughCoins(needed: price - profile.coins) }
         profile.coins -= price
         profile.unlockedCosmetics.insert(cosmetic.id)
         profile.stats.cosmeticsPurchased += 1
         equip(cosmetic.id, profile: &profile)
         evaluateAchievements(&profile, now: now)
+        unlockEarnedCosmetics(&profile)
         return .success
     }
 
@@ -290,35 +320,48 @@ enum Progression {
 
     // MARK: Missions
 
-    /// Claims a completed mission. Returns coins granted.
+    /// Claims a completed mission (coins + XP). Clearing all three pays the
+    /// all-clear bonus automatically and extends the all-clear streak.
     @discardableResult
-    static func claimMission(_ missionID: String, profile: inout PlayerProfile, now: Date) -> Int {
-        guard let index = profile.daily.missions.firstIndex(where: { $0.id == missionID }) else { return 0 }
+    static func claimMission(_ missionID: String, profile: inout PlayerProfile, now: Date,
+                             calendar: Calendar = .current) -> MissionClaim {
+        guard let index = profile.daily.missions.firstIndex(where: { $0.id == missionID }) else { return MissionClaim() }
         let mission = profile.daily.missions[index]
-        guard mission.isComplete, !mission.claimed else { return 0 }
+        guard mission.isComplete, !mission.claimed else { return MissionClaim() }
+
+        var claim = MissionClaim()
         profile.daily.missions[index].claimed = true
         profile.stats.missionsCompleted += 1
+        claim.coins = mission.reward
+        claim.xp = MissionGenerator.xpReward(for: mission)
         grant(mission.reward, to: &profile)
+
+        if profile.daily.missions.allSatisfy(\.claimed) && !profile.daily.allMissionsBonusClaimed {
+            profile.daily.allMissionsBonusClaimed = true
+            claim.allClear = true
+            claim.coins += MissionGenerator.allCompleteBonus
+            claim.xp += MissionGenerator.allCompleteXP
+            grant(MissionGenerator.allCompleteBonus, to: &profile)
+            registerAllClear(&profile, now: now, calendar: calendar)
+        }
+
+        claim.coins += addXP(claim.xp, to: &profile)
         evaluateAchievements(&profile, now: now)
-        return mission.reward
+        unlockEarnedCosmetics(&profile)
+        return claim
     }
 
-    static func isAllMissionsBonusAvailable(_ profile: PlayerProfile) -> Bool {
-        !profile.daily.missions.isEmpty
-            && profile.daily.missions.allSatisfy(\.claimed)
-            && !profile.daily.allMissionsBonusClaimed
-    }
-
-    @discardableResult
-    static func claimAllMissionsBonus(_ profile: inout PlayerProfile) -> Int {
-        guard isAllMissionsBonusAvailable(profile) else { return 0 }
-        profile.daily.allMissionsBonusClaimed = true
-        grant(MissionGenerator.allCompleteBonus, to: &profile)
-        return MissionGenerator.allCompleteBonus
+    private static func registerAllClear(_ profile: inout PlayerProfile, now: Date, calendar: Calendar) {
+        let today = DailyChallenge.dayKey(for: now, calendar: calendar)
+        guard profile.lastAllClearDay != today else { return }
+        let yesterday = DailyChallenge.previousDayKey(before: now, calendar: calendar)
+        profile.stats.allClearStreak = profile.lastAllClearDay == yesterday ? profile.stats.allClearStreak + 1 : 1
+        profile.stats.longestAllClearStreak = max(profile.stats.longestAllClearStreak, profile.stats.allClearStreak)
+        profile.stats.allClearDays += 1
+        profile.lastAllClearDay = today
     }
 
     static func claimableMissionCount(_ profile: PlayerProfile) -> Int {
         profile.daily.missions.filter { $0.isComplete && !$0.claimed }.count
-            + (isAllMissionsBonusAvailable(profile) ? 1 : 0)
     }
 }

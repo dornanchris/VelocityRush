@@ -2,8 +2,8 @@
 //  ShopView.swift
 //  VelocityRush
 //
-//  Spend coins on skins, trails and themes. Some items can only be earned
-//  through achievements or levels.
+//  The Armory: skins, blade trails and themes. Commons can be bought, rarer
+//  items need levels, personal bests or streaks, and the best are earn-only.
 //
 
 import SwiftUI
@@ -11,24 +11,49 @@ import SwiftUI
 struct ShopView: View {
     @EnvironmentObject private var store: ProgressStore
     @State private var category: CosmeticCategory = .skin
-    @State private var pendingPurchase: Cosmetic?
-    @State private var message: String?
+    @State private var selected: Cosmetic?
 
     private let columns = [GridItem(.flexible(), spacing: 12), GridItem(.flexible(), spacing: 12)]
+
+    private var items: [Cosmetic] {
+        Cosmetic.items(in: category).sorted { lhs, rhs in
+            if lhs.rarity != rhs.rarity { return lhs.rarity < rhs.rarity }
+            return (lhs.price ?? .max) < (rhs.price ?? .max)
+        }
+    }
 
     var body: some View {
         ZStack {
             ScreenBackground()
             ScrollView(showsIndicators: false) {
                 VStack(spacing: 18) {
-                    LoadoutPreview(profile: store.profile)
+                    LoadoutPreviewView(skinID: store.profile.equippedSkin,
+                                       trailID: store.profile.equippedTrail,
+                                       themeID: store.profile.equippedTheme)
+                        .frame(height: 190)
+                        .clipShape(RoundedRectangle(cornerRadius: 24, style: .continuous))
+                        .overlay(RoundedRectangle(cornerRadius: 24, style: .continuous).strokeBorder(VR.stroke))
+                        .overlay(alignment: .bottomLeading) {
+                            Text("YOUR LOADOUT")
+                                .font(VR.display(11, weight: .heavy))
+                                .tracking(1.5)
+                                .foregroundStyle(.white.opacity(0.75))
+                                .padding(12)
+                        }
+
                     categoryPicker
+                    collectionSummary
+
                     LazyVGrid(columns: columns, spacing: 12) {
-                        ForEach(Cosmetic.items(in: category)) { cosmetic in
-                            CosmeticCard(cosmetic: cosmetic) { handleTap(cosmetic) }
+                        ForEach(items) { cosmetic in
+                            CosmeticCard(cosmetic: cosmetic) {
+                                HapticsManager.shared.play(.selection)
+                                selected = cosmetic
+                            }
                         }
                     }
-                    Text("Earn coins from stars, high scores, missions, achievements and daily rewards.")
+
+                    Text("Coins come from stars, high scores, daily missions and login rewards. The rarest gear can't be bought – you have to earn it.")
                         .font(VR.display(12, weight: .medium))
                         .foregroundStyle(VR.secondaryText)
                         .multilineTextAlignment(.center)
@@ -37,21 +62,15 @@ struct ShopView: View {
                 .padding(20)
             }
         }
-        .navigationTitle("Shop")
+        .navigationTitle("Armory")
         .navigationBarTitleDisplayMode(.large)
         .toolbar {
             ToolbarItem(placement: .topBarTrailing) { CoinBadge(amount: store.profile.coins, compact: true) }
         }
-        .alert(pendingPurchase.map { "Buy \($0.name)?" } ?? "",
-               isPresented: Binding(get: { pendingPurchase != nil }, set: { if !$0 { pendingPurchase = nil } }),
-               presenting: pendingPurchase) { cosmetic in
-            Button("Buy for \(cosmetic.price ?? 0)") { buy(cosmetic) }
-            Button("Cancel", role: .cancel) {}
-        } message: { cosmetic in
-            Text(cosmetic.detail)
-        }
-        .alert(message ?? "", isPresented: Binding(get: { message != nil }, set: { if !$0 { message = nil } })) {
-            Button("OK", role: .cancel) {}
+        .sheet(item: $selected) { cosmetic in
+            CosmeticDetailSheet(cosmetic: cosmetic)
+                .presentationDetents([.large])
+                .presentationDragIndicator(.visible)
         }
     }
 
@@ -75,87 +94,87 @@ struct ShopView: View {
         }
     }
 
-    private func handleTap(_ cosmetic: Cosmetic) {
-        if store.profile.isUnlocked(cosmetic) {
-            store.equip(cosmetic.id)
-            SoundManager.shared.play(.tap)
-            HapticsManager.shared.play(.selection)
-            return
-        }
-        switch cosmetic.requirement {
-        case .coins(let price):
-            if store.profile.coins >= price {
-                pendingPurchase = cosmetic
-            } else {
-                HapticsManager.shared.play(.warning)
-                message = "You need \((price - store.profile.coins).formatted()) more coins for \(cosmetic.name)."
+    private var collectionSummary: some View {
+        let all = Cosmetic.items(in: category)
+        let owned = all.filter { store.profile.isUnlocked($0) }.count
+        return HStack(spacing: 12) {
+            VStack(alignment: .leading, spacing: 6) {
+                Text("\(owned) of \(all.count) \(category.title.lowercased()) collected")
+                    .font(VR.display(14, weight: .bold))
+                    .foregroundStyle(.white)
+                ProgressBar(value: Double(owned) / Double(max(all.count, 1)), tint: VR.cyan, height: 6)
             }
-        case .level(let level):
-            message = "\(cosmetic.name) unlocks automatically at level \(level)."
-        case .achievement(let id):
-            let title = AchievementCatalog.find(id)?.title ?? "an achievement"
-            message = "Unlock the “\(title)” achievement to earn \(cosmetic.name)."
-        case .free:
-            break
+            HStack(spacing: 4) {
+                ForEach(CosmeticRarity.allCases) { rarity in
+                    let total = all.filter { $0.rarity == rarity }.count
+                    if total > 0 {
+                        let have = all.filter { $0.rarity == rarity && store.profile.isUnlocked($0) }.count
+                        Circle()
+                            .fill(have == total ? rarity.color.color : rarity.color.color.opacity(0.25))
+                            .frame(width: 10, height: 10)
+                    }
+                }
+            }
         }
-    }
-
-    private func buy(_ cosmetic: Cosmetic) {
-        switch store.purchase(cosmetic.id) {
-        case .success:
-            SoundManager.shared.play(.unlock)
-            HapticsManager.shared.play(.success)
-            ToastCenter.shared.show(Toast(icon: "bag.fill", title: "Purchased & equipped",
-                                          subtitle: cosmetic.name, tint: cosmetic.swatch))
-        case .notEnoughCoins(let needed):
-            message = "You need \(needed.formatted()) more coins."
-        case .alreadyOwned, .locked:
-            break
-        }
+        .padding(14)
+        .glassCard(cornerRadius: 16)
     }
 }
 
-// MARK: - Cards
+// MARK: - Card
 
 struct CosmeticCard: View {
     let cosmetic: Cosmetic
     let action: () -> Void
     @EnvironmentObject private var store: ProgressStore
 
-    private var isOwned: Bool { store.profile.isUnlocked(cosmetic) }
+    private var profile: PlayerProfile { store.profile }
+    private var isOwned: Bool { profile.isUnlocked(cosmetic) }
 
     private var isEquipped: Bool {
         switch cosmetic.category {
-        case .skin: return store.profile.equippedSkin == cosmetic.id
-        case .trail: return store.profile.equippedTrail == cosmetic.id
-        case .theme: return store.profile.equippedTheme == cosmetic.id
+        case .skin: return profile.equippedSkin == cosmetic.id
+        case .trail: return profile.equippedTrail == cosmetic.id
+        case .theme: return profile.equippedTheme == cosmetic.id
         }
     }
 
     var body: some View {
         Button(action: action) {
-            VStack(spacing: 10) {
-                CosmeticThumbnail(cosmetic: cosmetic, size: 64)
-                    .frame(height: 84)
-                    .opacity(isOwned ? 1 : 0.55)
+            VStack(spacing: 8) {
+                CosmeticThumbnail(cosmetic: cosmetic, size: 60)
+                    .frame(height: 80)
+                    .opacity(isOwned ? 1 : 0.6)
                     .overlay(alignment: .topTrailing) {
-                        if !isOwned && cosmetic.price == nil {
+                        if !isOwned && !Progression.gatesMet(cosmetic, profile: profile) {
                             Image(systemName: "lock.fill")
-                                .font(.system(size: 13, weight: .bold))
+                                .font(.system(size: 12, weight: .bold))
                                 .foregroundStyle(.white)
                                 .padding(6)
-                                .background(Circle().fill(Color.black.opacity(0.5)))
+                                .background(Circle().fill(Color.black.opacity(0.55)))
                         }
                     }
                 Text(cosmetic.name)
                     .font(VR.display(15, weight: .bold))
                     .foregroundStyle(.white)
+                    .lineLimit(1)
+                    .minimumScaleFactor(0.8)
+                Text(cosmetic.rarity.title.uppercased())
+                    .font(VR.display(9, weight: .heavy))
+                    .tracking(1.2)
+                    .foregroundStyle(cosmetic.rarity.color.color)
                 status
+                    .frame(minHeight: 30)
             }
             .frame(maxWidth: .infinity)
             .padding(.vertical, 14)
             .padding(.horizontal, 10)
-            .glassCard(cornerRadius: 18, tint: isEquipped ? VR.cyan : nil)
+            .background(
+                RoundedRectangle(cornerRadius: 18, style: .continuous)
+                    .fill(RadialGradient(colors: [cosmetic.rarity.color.color.opacity(0.18), .clear],
+                                         center: .top, startRadius: 0, endRadius: 140))
+            )
+            .glassCard(cornerRadius: 18, tint: isEquipped ? VR.cyan : cosmetic.rarity.color.color.opacity(0.6))
         }
         .buttonStyle(PressableStyle())
     }
@@ -165,27 +184,197 @@ struct CosmeticCard: View {
         if isEquipped {
             Chip(text: "Equipped", icon: "checkmark", tint: VR.cyan)
         } else if isOwned {
-            Chip(text: "Equip", tint: .white)
-        } else {
-            switch cosmetic.requirement {
-            case .coins(let price):
-                HStack(spacing: 4) {
-                    Image(systemName: "star.circle.fill").foregroundStyle(VR.gold)
-                    Text(price.formatted())
-                        .foregroundStyle(store.profile.coins >= price ? .white : VR.secondaryText)
-                }
-                .font(VR.display(14, weight: .bold))
-                .padding(.vertical, 4)
-            case .level(let level):
-                Chip(text: "Level \(level)", icon: "lock.fill", tint: VR.purple)
-            case .achievement:
-                Chip(text: "Achievement", icon: "rosette", tint: VR.gold)
-            case .free:
-                Chip(text: "Free", tint: VR.green)
+            Chip(text: "Owned", tint: .white)
+        } else if let gate = cosmetic.gates.first(where: { !$0.isMet(by: profile) }) {
+            let progress = gate.progress(in: profile)
+            VStack(spacing: 4) {
+                Text(gate.summary)
+                    .font(VR.display(10, weight: .semibold))
+                    .foregroundStyle(VR.secondaryText)
+                    .lineLimit(2)
+                    .multilineTextAlignment(.center)
+                    .minimumScaleFactor(0.8)
+                ProgressBar(value: Double(progress.current) / Double(max(progress.goal, 1)),
+                            tint: cosmetic.rarity.color.color, height: 4)
+                    .padding(.horizontal, 8)
             }
+        } else if let price = cosmetic.price {
+            HStack(spacing: 4) {
+                Image(systemName: "star.circle.fill").foregroundStyle(VR.gold)
+                Text(price.formatted())
+                    .foregroundStyle(profile.coins >= price ? .white : VR.secondaryText)
+            }
+            .font(VR.display(14, weight: .bold))
         }
     }
 }
+
+// MARK: - Detail sheet
+
+struct CosmeticDetailSheet: View {
+    let cosmetic: Cosmetic
+    @EnvironmentObject private var store: ProgressStore
+    @Environment(\.dismiss) private var dismiss
+    @State private var confirmPurchase = false
+
+    private var profile: PlayerProfile { store.profile }
+    private var isOwned: Bool { profile.isUnlocked(cosmetic) }
+    private var gatesMet: Bool { Progression.gatesMet(cosmetic, profile: profile) }
+
+    private var isEquipped: Bool {
+        switch cosmetic.category {
+        case .skin: return profile.equippedSkin == cosmetic.id
+        case .trail: return profile.equippedTrail == cosmetic.id
+        case .theme: return profile.equippedTheme == cosmetic.id
+        }
+    }
+
+    var body: some View {
+        ZStack {
+            ScreenBackground()
+            ScrollView(showsIndicators: false) {
+                VStack(spacing: 18) {
+                    LoadoutPreviewView(skinID: cosmetic.category == .skin ? cosmetic.id : profile.equippedSkin,
+                                       trailID: cosmetic.category == .trail ? cosmetic.id : profile.equippedTrail,
+                                       themeID: cosmetic.category == .theme ? cosmetic.id : profile.equippedTheme)
+                        .frame(height: 240)
+                        .clipShape(RoundedRectangle(cornerRadius: 24, style: .continuous))
+                        .overlay(RoundedRectangle(cornerRadius: 24, style: .continuous)
+                            .strokeBorder(cosmetic.rarity.color.color.opacity(0.6), lineWidth: 1.5))
+                        .shadow(color: cosmetic.rarity.color.color.opacity(0.35), radius: 18)
+
+                    VStack(spacing: 8) {
+                        Text(cosmetic.rarity.title.uppercased() + " " + cosmetic.category.singularTitle.uppercased())
+                            .font(VR.display(12, weight: .heavy))
+                            .tracking(2)
+                            .foregroundStyle(cosmetic.rarity.color.color)
+                        Text(cosmetic.name)
+                            .font(VR.display(34))
+                            .foregroundStyle(.white)
+                        Text(cosmetic.detail)
+                            .font(VR.display(14, weight: .medium))
+                            .foregroundStyle(VR.secondaryText)
+                            .multilineTextAlignment(.center)
+                    }
+
+                    if !cosmetic.isFree { requirements }
+
+                    actionButton
+                }
+                .padding(20)
+                .padding(.top, 12)
+            }
+        }
+        .alert("Buy \(cosmetic.name)?", isPresented: $confirmPurchase) {
+            Button("Buy for \((cosmetic.price ?? 0).formatted())") { buy() }
+            Button("Cancel", role: .cancel) {}
+        } message: {
+            Text("You have \(profile.coins.formatted()) coins.")
+        }
+    }
+
+    private var requirements: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            SectionTitle(text: cosmetic.isEarnedOnly ? "How to earn" : "Requirements", icon: "list.bullet.rectangle")
+            ForEach(Array(cosmetic.gates.enumerated()), id: \.offset) { _, gate in
+                let met = gate.isMet(by: profile)
+                let progress = gate.progress(in: profile)
+                HStack(spacing: 12) {
+                    Image(systemName: met ? "checkmark.circle.fill" : "circle.dashed")
+                        .font(.system(size: 20, weight: .bold))
+                        .foregroundStyle(met ? VR.green : VR.secondaryText)
+                    VStack(alignment: .leading, spacing: 5) {
+                        Text(gate.summary)
+                            .font(VR.display(14, weight: .bold))
+                            .foregroundStyle(.white)
+                        if !met {
+                            ProgressBar(value: Double(progress.current) / Double(max(progress.goal, 1)),
+                                        tint: cosmetic.rarity.color.color, height: 5)
+                        }
+                        Text(gate.progressText(in: profile))
+                            .font(VR.display(11, weight: .semibold))
+                            .foregroundStyle(VR.secondaryText)
+                    }
+                }
+            }
+            if let price = cosmetic.price {
+                HStack(spacing: 12) {
+                    Image(systemName: profile.coins >= price ? "checkmark.circle.fill" : "star.circle.fill")
+                        .font(.system(size: 20, weight: .bold))
+                        .foregroundStyle(profile.coins >= price ? VR.green : VR.gold)
+                    VStack(alignment: .leading, spacing: 5) {
+                        Text("\(price.formatted()) coins")
+                            .font(VR.display(14, weight: .bold))
+                            .foregroundStyle(.white)
+                        if profile.coins < price && !isOwned {
+                            ProgressBar(value: Double(profile.coins) / Double(price), tint: VR.gold, height: 5)
+                        }
+                        Text("You have \(profile.coins.formatted())")
+                            .font(VR.display(11, weight: .semibold))
+                            .foregroundStyle(VR.secondaryText)
+                    }
+                }
+            }
+        }
+        .padding(18)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .glassCard(tint: cosmetic.rarity.color.color)
+    }
+
+    @ViewBuilder
+    private var actionButton: some View {
+        if isEquipped {
+            Button("Equipped") {}
+                .buttonStyle(GhostButtonStyle())
+                .disabled(true)
+        } else if isOwned {
+            Button("Equip") {
+                store.equip(cosmetic.id)
+                SoundManager.shared.play(.tap)
+                HapticsManager.shared.play(.success)
+                dismiss()
+            }
+            .buttonStyle(NeonButtonStyle(color: VR.cyan))
+        } else if !gatesMet {
+            Label(cosmetic.isEarnedOnly ? "Earn it to unlock" : "Meet the requirements to buy", systemImage: "lock.fill")
+                .font(VR.display(15, weight: .bold))
+                .foregroundStyle(VR.secondaryText)
+                .frame(maxWidth: .infinity)
+                .frame(height: 52)
+                .background(Capsule().fill(VR.card))
+        } else if let price = cosmetic.price {
+            if profile.coins >= price {
+                Button {
+                    confirmPurchase = true
+                } label: {
+                    Label("Buy for \(price.formatted())", systemImage: "star.circle.fill")
+                }
+                .buttonStyle(NeonButtonStyle(color: VR.gold))
+            } else {
+                Label("Need \((price - profile.coins).formatted()) more coins", systemImage: "star.circle")
+                    .font(VR.display(15, weight: .bold))
+                    .foregroundStyle(VR.secondaryText)
+                    .frame(maxWidth: .infinity)
+                    .frame(height: 52)
+                    .background(Capsule().fill(VR.card))
+            }
+        }
+    }
+
+    private func buy() {
+        guard store.purchase(cosmetic.id) == .success else {
+            HapticsManager.shared.play(.warning)
+            return
+        }
+        SoundManager.shared.play(.unlock)
+        HapticsManager.shared.play(.success)
+        ToastCenter.shared.show(Toast(icon: "bag.fill", title: "Purchased & equipped",
+                                      subtitle: cosmetic.name, tint: cosmetic.rarity.color))
+        dismiss()
+    }
+}
+
+// MARK: - Thumbnails
 
 struct CosmeticThumbnail: View {
     let cosmetic: Cosmetic
@@ -194,7 +383,7 @@ struct CosmeticThumbnail: View {
     var body: some View {
         switch cosmetic.category {
         case .skin:
-            SkinPreview(skin: cosmetic.skin ?? Cosmetic.skinLook(Cosmetic.defaultSkin), size: size * 0.7)
+            SkinPreview(skin: cosmetic.skin ?? Cosmetic.skinLook(Cosmetic.defaultSkin), size: size * 0.6)
                 .frame(width: size, height: size)
         case .trail:
             TrailPreview(trail: cosmetic.trail ?? Cosmetic.trailLook(Cosmetic.defaultTrail), size: size)
@@ -204,40 +393,46 @@ struct CosmeticThumbnail: View {
     }
 }
 
+/// A static blade swoosh drawn with the trail's real colours.
 struct TrailPreview: View {
     let trail: TrailLook
     var size: CGFloat = 56
 
     var body: some View {
         ZStack {
-            if trail.style == .none {
+            if !trail.hasRibbon && trail.particles == .none && !trail.afterimage {
                 Image(systemName: "nosign")
                     .font(.system(size: size * 0.4, weight: .bold))
                     .foregroundStyle(VR.secondaryText)
             } else {
-                ForEach(0..<6, id: \.self) { index in
-                    Circle()
-                        .fill(color(for: index))
-                        .frame(width: size * (0.3 - CGFloat(index) * 0.035), height: size * (0.3 - CGFloat(index) * 0.035))
-                        .offset(y: CGFloat(index) * size * 0.13 - size * 0.15)
-                        .opacity(1 - Double(index) * 0.14)
-                        .blur(radius: trail.style == .comet ? 1.5 : 0)
+                Canvas { context, canvasSize in
+                    let count = max(trail.length, 10)
+                    let points: [CGPoint] = (0..<count).map { index in
+                        let t = CGFloat(index) / CGFloat(count - 1)
+                        // A curved swipe from top-right to bottom-left.
+                        let x = canvasSize.width * (0.82 - 0.7 * t)
+                        let y = canvasSize.height * (0.2 + 0.6 * t) + sin(t * .pi) * canvasSize.height * 0.12
+                        return CGPoint(x: x, y: y)
+                    }
+                    for index in 0..<(count - 1) {
+                        let t = Double(index) / Double(count - 1)
+                        let width = size * 0.34 * CGFloat(max(trail.width, 0.4)) * CGFloat(pow(1 - t, 0.75)) + 1
+                        var path = Path()
+                        path.move(to: points[index])
+                        path.addLine(to: points[index + 1])
+                        let color = trail.hasRibbon ? trail.color(at: t, index: index, time: 0.8) : trail.primary
+                        context.stroke(path, with: .color(color.color.opacity(pow(1 - t, 1.1))),
+                                       style: StrokeStyle(lineWidth: width, lineCap: .round))
+                    }
+                    let head = points[0]
+                    let dot = CGRect(x: head.x - size * 0.13, y: head.y - size * 0.13, width: size * 0.26, height: size * 0.26)
+                    context.fill(Path(ellipseIn: dot), with: .color(.white))
                 }
-                Circle()
-                    .fill(.white)
-                    .frame(width: size * 0.32, height: size * 0.32)
-                    .offset(y: -size * 0.28)
-                    .shadow(color: trail.color.color, radius: 6)
+                .frame(width: size * 1.3, height: size)
+                .shadow(color: trail.primary.color.opacity(trail.glow ? 0.8 : 0.3), radius: 6)
             }
         }
-        .frame(width: size, height: size)
-    }
-
-    private func color(for index: Int) -> Color {
-        if trail.style == .rainbow {
-            return RGBColor.hsb(Double(index) / 6, 0.85, 1).color
-        }
-        return trail.color.color
+        .frame(width: size * 1.3, height: size)
     }
 }
 
@@ -267,47 +462,5 @@ struct ThemePreview: View {
         .frame(width: size * 1.3, height: size)
         .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
         .overlay(RoundedRectangle(cornerRadius: 12, style: .continuous).strokeBorder(VR.stroke))
-    }
-}
-
-/// Shows the currently equipped skin + trail on the equipped theme.
-struct LoadoutPreview: View {
-    let profile: PlayerProfile
-    @State private var bob = false
-
-    var body: some View {
-        let theme = Cosmetic.themeLook(profile.equippedTheme)
-        let skin = Cosmetic.skinLook(profile.equippedSkin)
-        let trail = Cosmetic.trailLook(profile.equippedTrail)
-        ZStack {
-            LinearGradient(colors: [theme.backgroundTop.color, theme.backgroundBottom.color], startPoint: .top, endPoint: .bottom)
-            ForEach(0..<5, id: \.self) { index in
-                Circle()
-                    .fill((index % 2 == 0 ? theme.hazard : theme.hazardAlt).color)
-                    .frame(width: CGFloat(14 + index * 5))
-                    .shadow(color: theme.hazard.color, radius: 8)
-                    .offset(x: CGFloat([-120, 90, -40, 140, 30][index]), y: CGFloat([-50, -30, -70, 20, -10][index]))
-            }
-            VStack(spacing: 0) {
-                SkinPreview(skin: skin, size: 34)
-                TrailPreview(trail: trail, size: 44)
-                    .rotationEffect(.degrees(180))
-                    .offset(y: -14)
-            }
-            .offset(y: bob ? 26 : 34)
-        }
-        .frame(height: 170)
-        .clipShape(RoundedRectangle(cornerRadius: 24, style: .continuous))
-        .overlay(RoundedRectangle(cornerRadius: 24, style: .continuous).strokeBorder(VR.stroke))
-        .overlay(alignment: .bottomLeading) {
-            Text("YOUR LOADOUT")
-                .font(VR.display(11, weight: .heavy))
-                .tracking(1.5)
-                .foregroundStyle(.white.opacity(0.7))
-                .padding(12)
-        }
-        .onAppear {
-            withAnimation(.easeInOut(duration: 1.4).repeatForever(autoreverses: true)) { bob = true }
-        }
     }
 }

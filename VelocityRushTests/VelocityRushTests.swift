@@ -132,6 +132,35 @@ struct EngineTests {
         #expect(engine.displayScore == 0)
     }
 
+    @Test func levelsGetLonger() {
+        #expect(GameEngine.level(at: 0) == 1)
+        #expect(GameEngine.level(at: 19.9) == 1)
+        #expect(GameEngine.level(at: 20) == 2)
+        #expect(GameEngine.level(at: 150) == 6)
+        #expect(GameEngine.level(at: 360) == 10)
+        #expect(GameEngine.level(at: 420) == 11)
+        let starts = GameEngine.levelStartTimes
+        for i in 2..<starts.count {
+            #expect(starts[i] - starts[i - 1] >= starts[i - 1] - starts[i - 2])
+        }
+    }
+
+    @Test func difficultyCurveRampsFastThenPlateausThenEscalates() {
+        var previous = -1.0
+        for second in stride(from: 0.0, through: 600, by: 1) {
+            let value = GameEngine.endlessIntensity(at: second)
+            #expect(value >= previous)
+            previous = value
+        }
+        // Tougher sooner than the old linear ramp (0.3 at 45s)…
+        #expect(GameEngine.endlessIntensity(at: 45) >= 0.45)
+        // …but the middle stays fair for a long time (old ramp was 1.0 at 150s)…
+        #expect(GameEngine.endlessIntensity(at: 150) < 0.75)
+        #expect(GameEngine.endlessIntensity(at: 240) < 0.9)
+        // …before it goes wild.
+        #expect(GameEngine.endlessIntensity(at: 480) == 1.6)
+    }
+
     @Test func playfieldClampsExtremeAspectRatios() {
         #expect(Playfield.fitting(viewWidth: 820, viewHeight: 1180).height == 720)
         #expect(Playfield.fitting(viewWidth: 300, viewHeight: 1000).height == 880)
@@ -277,40 +306,84 @@ struct ProgressionTests {
     @Test func purchasingCosmetics() {
         var profile = PlayerProfile()
         let now = date(2026, 9, 29)
-        #expect(Progression.purchase("skin.neon", profile: &profile, now: now) == .notEnoughCoins(needed: 150))
-        profile.coins = 200
+        #expect(Progression.purchase("skin.neon", profile: &profile, now: now) == .notEnoughCoins(needed: 1_500))
+        profile.coins = 1_600
         #expect(Progression.purchase("skin.neon", profile: &profile, now: now) == .success)
         #expect(profile.equippedSkin == "skin.neon")
         #expect(profile.stats.cosmeticsPurchased == 1)
         #expect(profile.unlockedAchievements["shop_1"] != nil)
-        // 200 - 150 + 50 (achievement reward)
-        #expect(profile.coins == 100)
+        // 1,600 - 1,500 + 25 (bronze achievement)
+        #expect(profile.coins == 125)
         #expect(Progression.purchase("skin.neon", profile: &profile, now: now) == .alreadyOwned)
+        // Earned-only items can never be bought.
+        profile.coins = 1_000_000
         #expect(Progression.purchase("skin.gold", profile: &profile, now: now) == .locked)
     }
 
-    @Test func claimingMissionsAndBonus() {
+    @Test func gatedItemsNeedTheirGateBeforePurchase() {
         var profile = PlayerProfile()
         let now = date(2026, 9, 29)
-        Progression.refreshDaily(&profile, now: now, calendar: utcCalendar)
-        for index in profile.daily.missions.indices {
-            profile.daily.missions[index].progress = profile.daily.missions[index].goal
-        }
-        #expect(Progression.claimableMissionCount(profile) == 3)
-        for mission in profile.daily.missions {
-            #expect(Progression.claimMission(mission.id, profile: &profile, now: now) == mission.reward)
-        }
-        #expect(Progression.isAllMissionsBonusAvailable(profile))
-        #expect(Progression.claimAllMissionsBonus(&profile) == MissionGenerator.allCompleteBonus)
-        #expect(Progression.claimableMissionCount(profile) == 0)
+        profile.coins = 100_000
+        // Plasma needs level 10.
+        #expect(Progression.purchase("skin.plasma", profile: &profile, now: now) == .locked)
+        profile.xp = Leveling.totalXP(forLevel: 10)
+        #expect(Progression.purchase("skin.plasma", profile: &profile, now: now) == .success)
     }
 
-    @Test func achievementUnlocksCosmetic() {
+    @Test func earnedCosmeticsUnlockAutomatically() {
         var profile = PlayerProfile()
-        profile.stats.bestEndlessTime = 125
-        let unlocked = Progression.evaluateAchievements(&profile, now: Date())
-        #expect(unlocked.contains { $0.id == "survive_120" })
-        #expect(profile.unlockedCosmetics.contains("skin.gold"))
+        profile.stats.bestEndlessTime = 181
+        var unlocked = Progression.unlockEarnedCosmetics(&profile)
+        #expect(unlocked == ["skin.frost"])
+        // Gold also needs level 15.
+        profile.xp = Leveling.totalXP(forLevel: 15)
+        unlocked = Progression.unlockEarnedCosmetics(&profile)
+        #expect(unlocked.contains("skin.gold"))
+        #expect(!unlocked.contains("skin.void"))
+    }
+
+    @Test func claimingAllMissionsPaysBonusAndBuildsStreak() {
+        var profile = PlayerProfile()
+        for day in 1...8 {
+            let now = date(2026, 9, day)
+            Progression.refreshDaily(&profile, now: now, calendar: utcCalendar)
+            for index in profile.daily.missions.indices {
+                profile.daily.missions[index].progress = profile.daily.missions[index].goal
+            }
+            #expect(Progression.claimableMissionCount(profile) == 3)
+            var claims: [MissionClaim] = []
+            for mission in profile.daily.missions {
+                claims.append(Progression.claimMission(mission.id, profile: &profile, now: now, calendar: utcCalendar))
+            }
+            #expect(claims.filter(\.allClear).count == 1)
+            #expect(claims.last?.allClear == true)
+            #expect(Progression.claimableMissionCount(profile) == 0)
+        }
+        #expect(profile.stats.allClearStreak == 8)
+        #expect(profile.stats.allClearDays == 8)
+        #expect(profile.unlockedCosmetics.contains("skin.sakura"))
+        #expect(profile.unlockedAchievements["allclear_streak_7"] != nil)
+
+        // Skipping a day resets the current streak but keeps the record.
+        Progression.refreshDaily(&profile, now: date(2026, 9, 10), calendar: utcCalendar)
+        #expect(profile.stats.allClearStreak == 0)
+        #expect(profile.stats.longestAllClearStreak == 8)
+    }
+
+    /// Regression: one great run used to unlock most of the shop.
+    @Test func oneMonsterRunCannotBuyOutTheShop() {
+        var profile = PlayerProfile()
+        let run = RunResult(mode: .endless, difficulty: .normal, modifier: .none, dailyKey: nil, score: 9_000,
+                            duration: 200, stars: 70, nearMisses: 40, perfectMisses: 12, dodged: 500, powerUps: 6,
+                            hits: 1, maxCombo: 45, maxMultiplier: 6, bestNovaClear: 8, levelReached: 7,
+                            date: date(2026, 9, 29))
+        _ = Progression.record(run, into: &profile, now: date(2026, 9, 29), calendar: utcCalendar)
+        let affordable = Cosmetic.catalog.filter {
+            Progression.isPurchasable($0, profile: profile) && ($0.price ?? .max) <= profile.coins
+        }
+        let owned = profile.unlockedCosmetics.subtracting(Cosmetic.defaultUnlocked)
+        #expect(affordable.count <= 2, "Affordable after one run: \(affordable.map(\.id))")
+        #expect(owned.count <= 2, "Unlocked after one run: \(owned)")
     }
 }
 
@@ -322,17 +395,41 @@ struct CatalogTests {
         #expect(Set(Cosmetic.catalog.map(\.id)).count == Cosmetic.catalog.count)
     }
 
-    @Test func achievementCosmeticsReferenceRealAchievements() {
+    @Test func achievementGatesReferenceRealAchievements() {
         for cosmetic in Cosmetic.catalog {
-            if case .achievement(let id) = cosmetic.requirement {
-                #expect(AchievementCatalog.find(id) != nil, "Missing achievement \(id)")
+            for gate in cosmetic.gates {
+                if case .achievement(let id) = gate {
+                    #expect(AchievementCatalog.find(id) != nil, "Missing achievement \(id)")
+                }
             }
         }
     }
 
     @Test func defaultsExistAndAreFree() {
         for id in [Cosmetic.defaultSkin, Cosmetic.defaultTrail, Cosmetic.defaultTheme] {
-            #expect(Cosmetic.find(id)?.requirement == .free)
+            #expect(Cosmetic.find(id)?.isFree == true)
+        }
+    }
+
+    @Test func rarerItemsAreHarderToGet() {
+        for cosmetic in Cosmetic.catalog where !cosmetic.isFree {
+            switch cosmetic.rarity {
+            case .common: #expect((cosmetic.price ?? 0) >= 1_000 || !cosmetic.gates.isEmpty)
+            case .rare, .epic: #expect(!cosmetic.gates.isEmpty || (cosmetic.price ?? 0) >= 5_000)
+            case .legendary, .mythic: #expect(!cosmetic.gates.isEmpty, "\(cosmetic.id) needs a gate")
+            }
+        }
+        // Mythics can't be bought at all.
+        #expect(Cosmetic.catalog.filter { $0.rarity == .mythic }.allSatisfy { $0.price == nil })
+    }
+
+    @Test func trailColoursAreValid() {
+        for cosmetic in Cosmetic.catalog {
+            guard let trail = cosmetic.trail, trail.hasRibbon else { continue }
+            for index in 0..<trail.length {
+                let color = trail.color(at: Double(index) / Double(trail.length), index: index, time: 1.3)
+                #expect(color.red >= 0 && color.red <= 1 && color.green >= 0 && color.green <= 1 && color.blue >= 0 && color.blue <= 1)
+            }
         }
     }
 
@@ -365,6 +462,31 @@ struct PersistenceTests {
         let loaded = repo.load()
         #expect(loaded.coins == 321)
         #expect(loaded.equippedSkin == "skin.neon")
+    }
+
+    @Test func olderSavesMissingNewFieldsStillLoad() throws {
+        let defaults = freshDefaults()
+        var old = PlayerProfile()
+        old.version = 2
+        old.coins = 4_321
+        old.unlockedCosmetics.insert("skin.phoenix")
+        old.equippedSkin = "skin.phoenix"
+        // Strip fields that didn't exist in v2.
+        var json = try #require(try JSONSerialization.jsonObject(with: JSONEncoder().encode(old)) as? [String: Any])
+        json.removeValue(forKey: "lastAllClearDay")
+        var stats = try #require(json["stats"] as? [String: Any])
+        stats.removeValue(forKey: "allClearDays")
+        stats.removeValue(forKey: "allClearStreak")
+        stats.removeValue(forKey: "longestAllClearStreak")
+        json["stats"] = stats
+        defaults.set(try JSONSerialization.data(withJSONObject: json), forKey: ProfileRepository.profileKey)
+
+        let loaded = ProfileRepository(defaults: defaults).load()
+        #expect(loaded.coins == 4_321)
+        #expect(loaded.version == PlayerProfile.currentVersion)
+        // v3 re-locks cosmetics from the old, too-generous economy.
+        #expect(!loaded.unlockedCosmetics.contains("skin.phoenix"))
+        #expect(loaded.equippedSkin == Cosmetic.defaultSkin)
     }
 
     @Test func legacyStatsAreMigrated() throws {

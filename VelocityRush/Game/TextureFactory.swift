@@ -244,6 +244,23 @@ enum TextureFactory {
         }
     }
 
+    /// Soft white capsule used for blade trail segments (tinted at runtime).
+    static var ribbonSegment: SKTexture {
+        cached("ribbonSegment", size: CGSize(width: 64, height: 32)) { context, size in
+            let rect = CGRect(origin: .zero, size: size)
+            context.addPath(CGPath(roundedRect: rect, cornerWidth: size.height / 2, cornerHeight: size.height / 2, transform: nil))
+            context.clip()
+            let colors = [UIColor.white.withAlphaComponent(0).cgColor,
+                          UIColor.white.withAlphaComponent(0.85).cgColor,
+                          UIColor.white.cgColor,
+                          UIColor.white.withAlphaComponent(0.85).cgColor,
+                          UIColor.white.withAlphaComponent(0).cgColor] as CFArray
+            guard let gradient = CGGradient(colorsSpace: CGColorSpaceCreateDeviceRGB(), colors: colors,
+                                            locations: [0, 0.3, 0.5, 0.7, 1]) else { return }
+            context.drawLinearGradient(gradient, start: .zero, end: CGPoint(x: 0, y: size.height), options: [])
+        }
+    }
+
     static var bubble: SKTexture {
         cached("bubble", size: CGSize(width: 32, height: 32)) { context, size in
             context.setStrokeColor(UIColor.white.cgColor)

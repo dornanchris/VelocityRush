@@ -48,7 +48,7 @@ enum DailyChallenge {
 // MARK: - Login rewards
 
 enum LoginRewards {
-    static let schedule = [25, 50, 75, 100, 150, 200, 400]
+    static let schedule = [25, 50, 75, 100, 125, 150, 300]
 
     static func reward(forStreakDay day: Int) -> Int {
         schedule[(max(day, 1) - 1) % schedule.count]
@@ -170,8 +170,15 @@ struct MissionProgress: Codable, Equatable, Identifiable {
 }
 
 enum MissionGenerator {
-    static let rewards = [60, 120, 220]
-    static let allCompleteBonus = 200
+    static let rewards = [50, 100, 175]
+    static let xpRewards = [60, 120, 200]
+    static let allCompleteBonus = 150
+    static let allCompleteXP = 150
+
+    static func xpReward(for mission: MissionProgress) -> Int {
+        let slot = rewards.firstIndex(of: mission.reward) ?? 0
+        return xpRewards[slot]
+    }
 
     static func missions(for dayKey: String) -> [MissionProgress] {
         var rng = SeededRandom(seed: StableHash.fnv1a("missions-" + dayKey))

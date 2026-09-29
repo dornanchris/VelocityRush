@@ -20,8 +20,8 @@ struct ProfileRepository {
 
     func load() -> PlayerProfile {
         if let data = defaults.data(forKey: Self.profileKey),
-           let profile = try? JSONDecoder().decode(PlayerProfile.self, from: data) {
-            return sanitized(profile)
+           let profile = Self.decodeMergingDefaults(data) {
+            return sanitized(migrated(profile))
         }
         var profile = PlayerProfile()
         migrateLegacy(into: &profile)
@@ -37,6 +37,52 @@ struct ProfileRepository {
     func reset() {
         defaults.removeObject(forKey: Self.profileKey)
         defaults.removeObject(forKey: Self.legacyStatsKey)
+    }
+
+    // MARK: Forward-compatible decoding
+
+    /// Decodes a saved profile, filling any fields added since it was saved
+    /// with their default values (synthesised Codable would otherwise fail).
+    static func decodeMergingDefaults(_ data: Data) -> PlayerProfile? {
+        guard let stored = try? JSONSerialization.jsonObject(with: data),
+              let defaultsData = try? JSONEncoder().encode(PlayerProfile()),
+              let defaultObject = try? JSONSerialization.jsonObject(with: defaultsData) else {
+            return nil
+        }
+        let merged = merge(defaultObject, with: stored)
+        guard JSONSerialization.isValidJSONObject(merged),
+              let mergedData = try? JSONSerialization.data(withJSONObject: merged) else { return nil }
+        return try? JSONDecoder().decode(PlayerProfile.self, from: mergedData)
+    }
+
+    /// Recursively overlays `stored` on `base`. Arrays and scalars from `stored` win.
+    private static func merge(_ base: Any, with stored: Any) -> Any {
+        guard let baseDict = base as? [String: Any], let storedDict = stored as? [String: Any] else {
+            return stored
+        }
+        var result = baseDict
+        for (key, value) in storedDict {
+            if let existing = baseDict[key] {
+                result[key] = merge(existing, with: value)
+            } else {
+                result[key] = value
+            }
+        }
+        return result
+    }
+
+    // MARK: Version migration
+
+    private func migrated(_ profile: PlayerProfile) -> PlayerProfile {
+        var profile = profile
+        if profile.version < 3 {
+            // v3 rebalanced the economy: cosmetics are re-locked and must be
+            // earned again under the new rules (coins and stats are kept).
+            profile.unlockedCosmetics = Cosmetic.defaultUnlocked
+            Progression.unlockEarnedCosmetics(&profile)
+        }
+        profile.version = PlayerProfile.currentVersion
+        return profile
     }
 
     /// Makes sure defaults are present even if the catalog changed between versions.

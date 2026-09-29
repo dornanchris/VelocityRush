@@ -360,7 +360,7 @@ struct NavigationGrid: View {
         HStack(spacing: 10) {
             tile(.missions, icon: "checklist", title: "Missions", badge: store.claimableMissions)
             tile(.leaderboards, icon: "trophy.fill", title: "Ranks")
-            tile(.shop, icon: "bag.fill", title: "Shop")
+            tile(.shop, icon: "bag.fill", title: "Armory")
             tile(.profile, icon: "person.fill", title: "Profile")
             tile(.settings, icon: "gearshape.fill", title: "Settings")
         }

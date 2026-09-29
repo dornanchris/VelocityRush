@@ -44,6 +44,10 @@ struct PlayerStats: Codable, Equatable {
     var longestSurvivalStreak = 0
     var loginStreak = 0
     var longestLoginStreak = 0
+    /// Days on which every daily mission was cleared.
+    var allClearDays = 0
+    var allClearStreak = 0
+    var longestAllClearStreak = 0
 
     /// Number of distinct modes played (for the Explorer achievement).
     var modesPlayed: Int {
@@ -73,6 +77,7 @@ struct DailyState: Codable, Equatable {
     /// Day these missions belong to, e.g. "2026-09-29".
     var dayKey: String = ""
     var missions: [MissionProgress] = []
+    /// True once all three missions are claimed (the all-clear bonus is paid automatically).
     var allMissionsBonusClaimed = false
     var dailyRunBest = 0
     var dailyRunAttempts = 0
@@ -82,7 +87,7 @@ struct DailyState: Codable, Equatable {
 }
 
 struct PlayerProfile: Codable, Equatable {
-    static let currentVersion = 2
+    static let currentVersion = 3
 
     var version = PlayerProfile.currentVersion
     var playerName = "Velocity Runner"
@@ -100,6 +105,8 @@ struct PlayerProfile: Codable, Equatable {
 
     var leaderboards: [String: [LeaderboardEntry]] = [:]
     var daily = DailyState()
+    /// Last day every mission was cleared (for the all-clear streak).
+    var lastAllClearDay: String = ""
 
     var level: Int { Leveling.level(forXP: xp) }
 
@@ -152,5 +159,5 @@ enum Leveling {
     }
 
     /// Coins granted when reaching `level`.
-    static func levelUpReward(for level: Int) -> Int { 40 + level * 10 }
+    static func levelUpReward(for level: Int) -> Int { 20 + level * 5 }
 }

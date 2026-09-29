@@ -256,40 +256,77 @@ struct Chip: View {
     }
 }
 
-/// Glowing orb preview for skins in menus.
+/// Glowing orb preview for skins in menus (a lightweight stand-in for the
+/// SpriteKit avatar, including its signature effects).
 struct SkinPreview: View {
     let skin: SkinLook
     var size: CGFloat = 44
+    @State private var spin = false
     @State private var hue: Double = 0
 
     var body: some View {
         ZStack {
             Circle()
-                .fill(skin.glow.color.opacity(0.35))
-                .frame(width: size * 1.6, height: size * 1.6)
-                .blur(radius: size * 0.25)
-            switch skin.style {
-            case .solid:
-                Circle().fill(skin.primary.color)
-            case .ring:
-                Circle().fill(skin.primary.color.opacity(0.9))
-                Circle().strokeBorder(.white.opacity(0.9), lineWidth: size * 0.08).padding(-size * 0.12)
-            case .core:
-                Circle().fill(RadialGradient(colors: [.white, skin.primary.color], center: .center,
-                                             startRadius: 0, endRadius: size * 0.5))
-            case .prism:
-                Circle().fill(AngularGradient(colors: [.red, .orange, .yellow, .green, .cyan, .blue, .purple, .red],
-                                              center: .center))
-                    .hueRotation(.degrees(hue))
-                    .onAppear {
-                        withAnimation(.linear(duration: 4).repeatForever(autoreverses: false)) { hue = 360 }
+                .fill(skin.glow.color.opacity(skin.has(.pulse) || skin.has(.aura) ? 0.5 : 0.35))
+                .frame(width: size * 1.7, height: size * 1.7)
+                .blur(radius: size * 0.28)
+
+            base
+
+            if skin.has(.spinRing) {
+                Circle()
+                    .stroke(skin.accentColor.color, style: StrokeStyle(lineWidth: max(1.5, size * 0.05), dash: [size * 0.16, size * 0.11]))
+                    .frame(width: size * 1.75, height: size * 1.75)
+                    .rotationEffect(.degrees(spin ? -360 : 0))
+            }
+            if skin.has(.orbiters) {
+                ZStack {
+                    ForEach(0..<3, id: \.self) { index in
+                        Circle()
+                            .fill(skin.accentColor.color)
+                            .frame(width: size * 0.2, height: size * 0.2)
+                            .shadow(color: skin.accentColor.color, radius: 3)
+                            .offset(x: size * 1.0)
+                            .rotationEffect(.degrees(Double(index) * 120))
                     }
-            case .void:
-                Circle().fill(Color.black)
-                Circle().strokeBorder(.white, lineWidth: size * 0.1)
+                }
+                .rotationEffect(.degrees(spin ? 360 : 0))
+            }
+            if skin.has(.sparkle) {
+                Image(systemName: "sparkle")
+                    .font(.system(size: size * 0.3, weight: .bold))
+                    .foregroundStyle(skin.accentColor.color)
+                    .offset(x: size * 0.55, y: -size * 0.55)
             }
         }
+        .hueRotation(.degrees(skin.has(.hueCycle) ? hue : 0))
         .frame(width: size, height: size)
+        .onAppear {
+            withAnimation(.linear(duration: 3).repeatForever(autoreverses: false)) { spin = true }
+            if skin.has(.hueCycle) {
+                withAnimation(.linear(duration: 4).repeatForever(autoreverses: false)) { hue = 360 }
+            }
+        }
+    }
+
+    @ViewBuilder
+    private var base: some View {
+        switch skin.style {
+        case .solid:
+            Circle().fill(skin.primary.color)
+        case .ring:
+            Circle().fill(skin.primary.color.opacity(0.9))
+            Circle().strokeBorder(.white.opacity(0.9), lineWidth: size * 0.08).padding(-size * 0.12)
+        case .core:
+            Circle().fill(RadialGradient(colors: [.white, skin.primary.color], center: .center,
+                                         startRadius: 0, endRadius: size * 0.5))
+        case .prism:
+            Circle().fill(AngularGradient(colors: [.red, .orange, .yellow, .green, .cyan, .blue, .purple, .red],
+                                          center: .center))
+        case .void:
+            Circle().fill(Color.black)
+            Circle().strokeBorder(.white, lineWidth: size * 0.1)
+        }
     }
 }
 

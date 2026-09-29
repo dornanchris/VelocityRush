@@ -61,40 +61,55 @@ struct MissionsView: View {
     private var bonusCard: some View {
         let missions = store.profile.daily.missions
         let claimed = missions.filter(\.claimed).count
-        let available = Progression.isAllMissionsBonusAvailable(store.profile)
         let done = store.profile.daily.allMissionsBonusClaimed
-        return HStack(spacing: 14) {
-            Image(systemName: done ? "shippingbox.fill" : "gift.fill")
-                .font(.system(size: 30, weight: .bold))
-                .foregroundStyle(VR.gold)
-                .frame(width: 56, height: 56)
-                .background(Circle().fill(VR.gold.opacity(0.15)))
-                .symbolEffect(.bounce, value: available)
-            VStack(alignment: .leading, spacing: 4) {
-                Text("All-Clear Bonus")
-                    .font(VR.display(17))
-                    .foregroundStyle(.white)
-                Text(done ? "Claimed – see you tomorrow!" : "Claim all 3 missions  (\(claimed)/\(missions.count))")
-                    .font(VR.display(12, weight: .semibold))
-                    .foregroundStyle(VR.secondaryText)
-            }
-            Spacer()
-            if available {
-                Button("+\(MissionGenerator.allCompleteBonus)") {
-                    store.claimAllMissionsBonus()
-                    SoundManager.shared.play(.coin)
-                    HapticsManager.shared.play(.success)
+        let stats = store.profile.stats
+        return VStack(alignment: .leading, spacing: 14) {
+            HStack(spacing: 14) {
+                Image(systemName: done ? "checkmark.seal.fill" : "gift.fill")
+                    .font(.system(size: 30, weight: .bold))
+                    .foregroundStyle(done ? VR.green : VR.gold)
+                    .frame(width: 56, height: 56)
+                    .background(Circle().fill((done ? VR.green : VR.gold).opacity(0.15)))
+                    .symbolEffect(.bounce, value: done)
+                VStack(alignment: .leading, spacing: 4) {
+                    Text("All-Clear Bonus")
+                        .font(VR.display(17))
+                        .foregroundStyle(.white)
+                    Text(done ? "Cleared today – see you tomorrow!"
+                              : "Claim all 3 missions for +\(MissionGenerator.allCompleteBonus) coins  (\(claimed)/\(missions.count))")
+                        .font(VR.display(12, weight: .semibold))
+                        .foregroundStyle(VR.secondaryText)
                 }
-                .buttonStyle(NeonButtonStyle(color: VR.gold, height: 40))
-                .frame(width: 96)
-            } else if !done {
-                Label("\(MissionGenerator.allCompleteBonus)", systemImage: "star.circle.fill")
-                    .font(VR.display(14, weight: .bold))
-                    .foregroundStyle(VR.gold.opacity(0.6))
+                Spacer(minLength: 0)
             }
+            HStack(spacing: 10) {
+                streakStat(value: stats.allClearStreak, label: "Current streak", icon: "flame.fill", tint: VR.pink)
+                streakStat(value: stats.longestAllClearStreak, label: "Best streak", icon: "trophy.fill", tint: VR.gold)
+                streakStat(value: stats.allClearDays, label: "All-clear days", icon: "calendar", tint: VR.cyan)
+            }
+            Text("Exclusive rewards: Sakura skin (7-day streak) · Solar Flare theme (14 days) · Prism Storm trail (30-day streak) · Singularity skin (30 days + level 50)")
+                .font(VR.display(11, weight: .semibold))
+                .foregroundStyle(VR.purple)
+                .fixedSize(horizontal: false, vertical: true)
         }
         .padding(16)
-        .glassCard(tint: available ? VR.gold : nil)
+        .glassCard(tint: done ? VR.green : VR.gold)
+    }
+
+    private func streakStat(value: Int, label: String, icon: String, tint: Color) -> some View {
+        VStack(spacing: 3) {
+            Label("\(value)", systemImage: icon)
+                .font(VR.display(17))
+                .foregroundStyle(tint)
+            Text(label)
+                .font(VR.display(10, weight: .semibold))
+                .foregroundStyle(VR.secondaryText)
+                .lineLimit(1)
+                .minimumScaleFactor(0.7)
+        }
+        .frame(maxWidth: .infinity)
+        .padding(.vertical, 8)
+        .background(RoundedRectangle(cornerRadius: 12).fill(VR.card))
     }
 
     private var tips: some View {
@@ -149,6 +164,9 @@ struct MissionCard: View {
                     Text("\(mission.reward)")
                         .font(VR.display(13, weight: .bold))
                         .foregroundStyle(mission.claimed ? VR.secondaryText : .white)
+                    Text("+\(MissionGenerator.xpReward(for: mission)) XP")
+                        .font(VR.display(9, weight: .bold))
+                        .foregroundStyle(VR.cyan.opacity(mission.claimed ? 0.5 : 1))
                 }
                 .frame(width: 60)
             }

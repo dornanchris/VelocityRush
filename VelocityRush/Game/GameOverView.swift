@@ -214,8 +214,8 @@ struct GameOverView: View {
                     HStack(spacing: 12) {
                         CosmeticThumbnail(cosmetic: cosmetic, size: 40)
                         VStack(alignment: .leading, spacing: 2) {
-                            Text(cosmetic.name).font(VR.display(16)).foregroundStyle(.white)
-                            Text(String(cosmetic.category.title.dropLast()) + " · equip it in the Shop")
+                            Text(cosmetic.name).font(VR.display(16)).foregroundStyle(cosmetic.rarity.color.color)
+                            Text("\(cosmetic.rarity.title) \(cosmetic.category.singularTitle.lowercased()) · equip it in the Shop")
                                 .font(VR.display(12, weight: .medium))
                                 .foregroundStyle(VR.secondaryText)
                         }

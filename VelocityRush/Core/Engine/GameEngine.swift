@@ -129,7 +129,38 @@ final class GameEngine {
     static let timeAttackStartClock: Double = 60
     static let timeAttackHitPenalty: Double = 5
     static let timeCrystalBonus: Double = 3
-    static let levelDuration: Double = 15
+    /// When each level starts (seconds). Levels get longer as you go; after
+    /// the table runs out a new level starts every 60 seconds.
+    static let levelStartTimes: [Double] = [0, 20, 45, 75, 110, 150, 195, 245, 300, 360]
+
+    /// Endless/Daily difficulty curve as (time, intensity) knots: a quick
+    /// warm-up, a long demanding-but-fair middle, then it gets wild after ~5 min.
+    static let endlessCurve: [(time: Double, intensity: Double)] = [
+        (0, 0.12), (20, 0.26), (45, 0.45), (75, 0.55), (110, 0.63), (150, 0.70),
+        (195, 0.77), (245, 0.85), (300, 0.97), (360, 1.12)
+    ]
+
+    static func level(at elapsed: Double) -> Int {
+        guard let last = levelStartTimes.last else { return 1 }
+        if elapsed >= last {
+            return levelStartTimes.count + Int((elapsed - last) / 60)
+        }
+        return (levelStartTimes.lastIndex { elapsed >= $0 } ?? 0) + 1
+    }
+
+    static func endlessIntensity(at elapsed: Double) -> Double {
+        let curve = endlessCurve
+        guard let last = curve.last else { return 0 }
+        if elapsed >= last.time {
+            // Beyond the curve: +0.25 per minute until it caps out.
+            return min(1.6, last.intensity + (elapsed - last.time) / 60 * 0.25)
+        }
+        for index in 1..<curve.count where elapsed < curve[index].time {
+            let a = curve[index - 1], b = curve[index]
+            return lerp(a.intensity, b.intensity, (elapsed - a.time) / (b.time - a.time))
+        }
+        return last.intensity
+    }
     static let nearMissThreshold: Double = 18
     static let perfectMissThreshold: Double = 7
     static let basePlayerRadius: Double = 14
@@ -213,17 +244,23 @@ final class GameEngine {
 
     /// 0 at the start, 1 at "full speed" and slowly beyond.
     var intensity: Double {
-        var t: Double
         switch config.mode {
         case .endless, .daily:
-            t = elapsed / 150
+            return GameEngine.endlessIntensity(at: elapsed)
         case .timeAttack:
-            t = 0.25 + elapsed / 110
+            return min(0.3 + elapsed / 100, 1.1)
         case .zen:
-            t = min(elapsed / 240, 0.55)
+            return min(0.12 + elapsed / 300, 0.55)
         }
-        if t > 1 { t = 1 + (t - 1) * 0.35 }
-        return min(t, 1.6)
+    }
+
+    /// Which hazard families are in play. Endless/Daily introduce one new
+    /// family per level; other modes follow intensity.
+    private var hazardStage: Int {
+        switch config.mode {
+        case .endless, .daily: return level
+        case .timeAttack, .zen: return 1 + Int(intensity * 7)
+        }
     }
 
     // MARK: Input
@@ -317,7 +354,7 @@ final class GameEngine {
     }
 
     private func updateLevel() {
-        let newLevel = 1 + Int(elapsed / GameEngine.levelDuration)
+        let newLevel = GameEngine.level(at: elapsed)
         if newLevel > level {
             level = newLevel
             if config.mode == .endless || config.mode == .daily {
@@ -382,12 +419,14 @@ final class GameEngine {
             hazardTimer = max(hazardTimer, 0.05)
         }
 
-        let wallsEnabled = (config.mode == .endless || config.mode == .daily) && intensity > 0.55
+        let wallsEnabled = (config.mode == .endless || config.mode == .daily) && hazardStage >= 6
         if wallsEnabled {
             wallTimer -= dt
             if wallTimer <= 0 {
                 spawnWall()
-                wallTimer = hazardRNG.range(14, 22)
+                // Walls come more often the deeper you get.
+                let deeper = Double(max(0, level - 6))
+                wallTimer = hazardRNG.range(max(8, 16 - deeper * 1.5), max(12, 24 - deeper * 2))
                 hazardTimer = max(hazardTimer, 0.9)
             }
         }
@@ -395,12 +434,13 @@ final class GameEngine {
 
     private func nextKind() -> HazardKind {
         let t = intensity
+        let stage = hazardStage
         var weights: [(HazardKind, Double)] = [
             (.drop, 1.0),
-            (.wobbler, t > 0.08 ? 0.35 : 0),
-            (.speeder, t > 0.18 ? 0.25 : 0),
-            (.giant, t > 0.30 ? 0.15 : 0),
-            (.splitter, t > 0.40 ? 0.18 : 0)
+            (.wobbler, stage >= 2 ? 0.35 : 0),
+            (.speeder, stage >= 3 ? 0.2 + min(t, 1.2) * 0.12 : 0),
+            (.giant, stage >= 4 ? 0.15 : 0),
+            (.splitter, stage >= 5 ? 0.14 + min(t, 1.2) * 0.08 : 0)
         ]
         switch config.modifier {
         case .wobbleWorld:

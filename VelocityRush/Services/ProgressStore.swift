@@ -22,7 +22,7 @@ final class ProgressStore: ObservableObject {
         var loaded = repository.load()
         Progression.refreshDaily(&loaded, now: Date())
         Progression.evaluateAchievements(&loaded, now: Date())
-        _ = Progression.unlockLevelCosmetics(&loaded)
+        Progression.unlockEarnedCosmetics(&loaded)
         profile = loaded
         repository.save(loaded)
     }
@@ -60,13 +60,14 @@ final class ProgressStore: ObservableObject {
     }
 
     @discardableResult
-    func claimMission(_ missionID: String) -> Int {
-        mutate { Progression.claimMission(missionID, profile: &$0, now: Date()) }
-    }
-
-    @discardableResult
-    func claimAllMissionsBonus() -> Int {
-        mutate { Progression.claimAllMissionsBonus(&$0) }
+    func claimMission(_ missionID: String) -> MissionClaim {
+        let claim = mutate { Progression.claimMission(missionID, profile: &$0, now: Date()) }
+        if claim.allClear {
+            ToastCenter.shared.show(Toast(icon: "checkmark.seal.fill", title: "All-clear bonus!",
+                                          subtitle: "+\(MissionGenerator.allCompleteBonus) coins · \(profile.stats.allClearStreak)-day streak",
+                                          tint: RGBColor(hex: 0x6BFF9E)))
+        }
+        return claim
     }
 
     @discardableResult
@@ -94,8 +95,12 @@ final class ProgressStore: ObservableObject {
     private func mutate<T>(announce: Bool = true, _ body: (inout PlayerProfile) -> T) -> T {
         var updated = profile
         let before = Set(updated.unlockedAchievements.keys)
+        let cosmeticsBefore = updated.unlockedCosmetics
         let result = body(&updated)
         let newIDs = Set(updated.unlockedAchievements.keys).subtracting(before)
+        let newCosmetics = Cosmetic.catalog.filter {
+            updated.unlockedCosmetics.contains($0.id) && !cosmeticsBefore.contains($0.id) && $0.isEarnedOnly
+        }
         if updated != profile {
             profile = updated
             repository.save(updated)
@@ -104,6 +109,12 @@ final class ProgressStore: ObservableObject {
             let ordered = AchievementCatalog.all.map(\.id).filter { newIDs.contains($0) }
             GameCenterManager.shared.report(achievementIDs: ordered)
             if announce { ToastCenter.shared.announceAchievements(ordered) }
+        }
+        if announce {
+            for cosmetic in newCosmetics {
+                ToastCenter.shared.show(Toast(icon: "sparkles", title: "\(cosmetic.rarity.title) \(cosmetic.category.singularTitle.lowercased()) unlocked!",
+                                              subtitle: cosmetic.name, tint: cosmetic.rarity.color))
+            }
         }
         return result
     }
