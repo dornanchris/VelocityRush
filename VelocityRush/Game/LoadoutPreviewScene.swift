@@ -117,20 +117,33 @@ final class LoadoutPreviewScene: SKScene {
     }
 }
 
+/// Owns the preview scene. `@StateObject`'s autoclosure runs once, so the
+/// scene isn't rebuilt every time the parent view re-renders.
+@MainActor
+final class LoadoutPreviewHolder: ObservableObject {
+    let scene: LoadoutPreviewScene
+
+    init(skinID: String, trailID: String, themeID: String) {
+        scene = LoadoutPreviewScene(size: CGSize(width: 360, height: 200),
+                                    skinID: skinID, trailID: trailID, themeID: themeID)
+    }
+}
+
 /// SwiftUI wrapper that keeps one preview scene alive and swaps looks in place.
 struct LoadoutPreviewView: View {
     let skinID: String
     let trailID: String
     let themeID: String
-    @State private var scene: LoadoutPreviewScene
+    @StateObject private var holder: LoadoutPreviewHolder
 
     init(skinID: String, trailID: String, themeID: String) {
         self.skinID = skinID
         self.trailID = trailID
         self.themeID = themeID
-        _scene = State(initialValue: LoadoutPreviewScene(size: CGSize(width: 360, height: 200),
-                                                         skinID: skinID, trailID: trailID, themeID: themeID))
+        _holder = StateObject(wrappedValue: LoadoutPreviewHolder(skinID: skinID, trailID: trailID, themeID: themeID))
     }
+
+    private var scene: LoadoutPreviewScene { holder.scene }
 
     var body: some View {
         SpriteView(scene: scene, preferredFramesPerSecond: 60)
