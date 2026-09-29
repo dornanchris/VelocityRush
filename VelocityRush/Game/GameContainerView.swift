@@ -36,7 +36,7 @@ struct GameContainerView: View {
             .ignoresSafeArea()
 
             if session.phase != .finished {
-                HUDView(session: session)
+                HUDView(session: session, hudModel: session.hudModel)
                     .transition(.opacity)
             }
 
@@ -70,9 +70,10 @@ struct GameContainerView: View {
 // MARK: - HUD
 
 struct HUDView: View {
-    @ObservedObject var session: GameSessionModel
+    let session: GameSessionModel
+    @ObservedObject var hudModel: HUDModel
 
-    private var hud: HUDState { session.hud }
+    private var hud: HUDState { hudModel.state }
     private var mode: GameMode { session.config.mode }
 
     var body: some View {
@@ -98,7 +99,7 @@ struct HUDView: View {
     private var scoreBlock: some View {
         VStack(alignment: .leading, spacing: 6) {
             if mode == .zen {
-                Label("\(session.hud.score)", systemImage: "leaf.fill")
+                Label("\(hud.score)", systemImage: "leaf.fill")
                     .font(VR.display(22))
                     .foregroundStyle(VR.green)
             } else {

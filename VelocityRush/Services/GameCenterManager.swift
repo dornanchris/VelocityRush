@@ -11,7 +11,7 @@ import GameKit
 import UIKit
 
 struct GlobalScore: Identifiable, Equatable {
-    var id: Int { rank }
+    let id: String
     let rank: Int
     let name: String
     let score: Int
@@ -80,7 +80,8 @@ final class GameCenterManager: ObservableObject {
                                     range: NSRange(location: 1, length: 25)) { localEntry, entries, _, _ in
                 let localID = localEntry?.player.gamePlayerID
                 let scores = (entries ?? []).map { entry in
-                    GlobalScore(rank: entry.rank,
+                    GlobalScore(id: "\(entry.rank)-\(entry.player.gamePlayerID)",
+                                rank: entry.rank,
                                 name: entry.player.displayName,
                                 score: entry.score,
                                 isLocalPlayer: entry.player.gamePlayerID == localID)

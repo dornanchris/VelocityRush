@@ -28,6 +28,13 @@ struct HUDState: Equatable {
     var isCountdown = true
 }
 
+/// Separate observable so 60 Hz HUD updates only re-render the HUD,
+/// not the whole container (and its SpriteView).
+@MainActor
+final class HUDModel: ObservableObject {
+    @Published var state = HUDState()
+}
+
 struct RunSummary: Equatable {
     let config: RunConfig
     let result: RunResult
@@ -42,7 +49,7 @@ final class GameSessionModel: ObservableObject {
         case finished
     }
 
-    @Published private(set) var hud = HUDState()
+    let hudModel = HUDModel()
     @Published private(set) var phase: Phase = .playing
     @Published private(set) var summary: RunSummary?
     @Published private(set) var scene: GameScene?
@@ -73,8 +80,10 @@ final class GameSessionModel: ObservableObject {
 
     // MARK: Scene callbacks
 
+    var hud: HUDState { hudModel.state }
+
     func updateHUD(_ newValue: HUDState) {
-        if hud != newValue { hud = newValue }
+        if hudModel.state != newValue { hudModel.state = newValue }
     }
 
     func runFinished(_ result: RunResult) {
@@ -111,7 +120,7 @@ final class GameSessionModel: ObservableObject {
         let next = config.replay()
         config = next
         summary = nil
-        hud = HUDState()
+        hudModel.state = HUDState()
         withAnimation(.easeOut(duration: 0.2)) { phase = .playing }
         scene?.startRun(config: next)
         SoundManager.shared.stopMusic()
