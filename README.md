@@ -1,4 +1,4 @@
-# Velocity Rush ⚡️
+# Starshower Run ⚡️
 
 A neon arcade dodger for iPhone and iPad, built with SwiftUI and SpriteKit. Drag your dot, weave through falling hazards, skim them for near-miss points, and chase the leaderboards.
 
@@ -52,7 +52,7 @@ Everything in Settings affects the game:
 ## Project layout
 
 ```
-VelocityRush/
+StarshowerRun/
 ├── Core/                    Pure Swift (Foundation only) – unit tested
 │   ├── Engine/              GameEngine simulation, modes, seeded RNG, entities
 │   ├── Progression/         Profile, achievements, missions, cosmetics, leveling, persistence
@@ -69,7 +69,7 @@ The **engine is completely separate from rendering.** `GameEngine` takes a frame
 
 ## Setup
 
-1. Open `VelocityRush.xcodeproj` in Xcode 16.3 or later. The deployment target is iOS 18.4.
+1. Open `StarshowerRun.xcodeproj` in Xcode 16.3 or later. The deployment target is iOS 18.4.
 2. Build and run on an iPhone or the iOS Simulator. No extra setup is needed; the game runs fully offline.
 
 ### Enabling Game Center (optional)
@@ -86,4 +86,4 @@ Without Game Center the game uses local leaderboards only. To turn on global lea
 
 ## Tests
 
-`VelocityRushTests` uses Swift Testing to cover the core: the engine (countdown, determinism, mode end conditions), daily seeds and missions, the leveling curve, the level table and difficulty curve, run recording, leaderboards, login and all-clear streaks, gated purchases, automatic unlocks, an economy guard (one great run can't unlock the shop), catalog integrity, persistence, legacy migration and the audio synth. Run them with **⌘U**.
+`StarshowerRunTests` uses Swift Testing to cover the core: the engine (countdown, determinism, mode end conditions), daily seeds and missions, the leveling curve, the level table and difficulty curve, run recording, leaderboards, login and all-clear streaks, gated purchases, automatic unlocks, an economy guard (one great run can't unlock the shop), catalog integrity, persistence, legacy migration and the audio synth. Run them with **⌘U**.
