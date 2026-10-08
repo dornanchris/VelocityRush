@@ -81,7 +81,7 @@ class MainActivity : ComponentActivity(), Platform {
     }
 
     @Deprecated("Framework callback; the Activity Result API would pull in extra dependencies for one prompt.")
-    override fun onRequestPermissionsResult(requestCode: Int, permissions: Array<out String>, grantResults: IntArray) {
+    override fun onRequestPermissionsResult(requestCode: Int, permissions: Array<String>, grantResults: IntArray) {
         @Suppress("DEPRECATION")
         super.onRequestPermissionsResult(requestCode, permissions, grantResults)
         if (requestCode == REQUEST_NOTIFICATIONS) {
