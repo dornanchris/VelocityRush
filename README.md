@@ -1,6 +1,6 @@
 # Starshower Run ⚡️
 
-A neon arcade dodger for iPhone and iPad, built with SwiftUI and SpriteKit. Drag your dot, weave through falling hazards, skim them for near-miss points, and chase the leaderboards.
+A neon arcade dodger for iPhone, iPad and Android. The iOS app is built with SwiftUI and SpriteKit; the Android app (in `android/`) with Kotlin and Jetpack Compose. Drag your dot, weave through falling hazards, skim them for near-miss points, and chase the leaderboards.
 
 Everything is generated in code: sprites, particles, sound effects and music. The only image in the project is the app icon.
 
@@ -83,6 +83,10 @@ Without Game Center the game uses local leaderboards only. To turn on global lea
    - `vr.leaderboard.daily`: **recurring**, resets daily, high score is best
 3. Also create achievements named `vr.achievement.<id>`, where `<id>` is each id in `Core/Progression/Achievements.swift`:
    `survive_30 survive_60 survive_90 survive_120 survive_180 total_10min total_1hour purist_60 expert_60 streak_3 level_6 level_9 endless_1k endless_5k endless_15k ta_5k ta_15k ta_35k daily_3k nearmiss_run_15 nearmiss_100 nearmiss_1000 perfect_50 multiplier_3 multiplier_6 nova_12 dodge_1000 dodge_10000 stars_run_40 stars_250 stars_2500 powerups_50 shop_1 shop_10 games_10 games_100 games_500 explorer daily_1 daily_30 login_7 allclear_1 allclear_streak_7 allclear_30 missions_10 missions_100`
+
+## Android
+
+The Android port lives in `android/` and has the same modes, progression, Armory, missions and audio. A Daily Run is identical on both platforms. See [`android/README.md`](android/README.md) for building, the project layout and the platform differences.
 
 ## Tests
 
