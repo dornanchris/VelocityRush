@@ -59,6 +59,8 @@ import androidx.compose.ui.graphics.StrokeCap
 import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.graphics.drawscope.rotate
 import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontStyle
 import androidx.compose.ui.text.font.FontWeight
@@ -462,14 +464,20 @@ fun starPath(center: Offset, outer: Float, inner: Float, points: Int): androidx.
 fun Logo() {
     val transition = rememberInfiniteTransition(label = "logo")
     val glow by transition.animateFloat(0.35f, 0.8f, infiniteRepeatable(tween(1_600), RepeatMode.Reverse), label = "glow")
-    Column(horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.spacedBy((-10).dp)) {
+    Column(
+        Modifier.semantics(mergeDescendants = true) { contentDescription = "Starshower Run" },
+        horizontalAlignment = Alignment.CenterHorizontally,
+        verticalArrangement = Arrangement.spacedBy((-10).dp),
+    ) {
         Text(
-            "VELOCITY",
-            style = TextStyle(fontSize = 46.sp, fontWeight = FontWeight.Black, fontStyle = FontStyle.Italic),
+            "STARSHOWER",
+            style = TextStyle(fontSize = 40.sp, fontWeight = FontWeight.Black, fontStyle = FontStyle.Italic),
             color = Color.White,
+            maxLines = 1,
+            softWrap = false,
         )
         Text(
-            "RUSH",
+            "RUN",
             style = TextStyle(
                 fontSize = 58.sp, fontWeight = FontWeight.Black, fontStyle = FontStyle.Italic,
                 brush = VR.brandGradient,

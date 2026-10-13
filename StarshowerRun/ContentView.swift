@@ -181,11 +181,13 @@ struct Logo: View {
 
     var body: some View {
         VStack(spacing: -6) {
-            Text("VELOCITY")
-                .font(.system(size: 46, weight: .black, design: .rounded))
+            Text("STARSHOWER")
+                .font(.system(size: 42, weight: .black, design: .rounded))
                 .italic()
                 .foregroundStyle(.white)
-            Text("RUSH")
+                .lineLimit(1)
+                .minimumScaleFactor(0.6)
+            Text("RUN")
                 .font(.system(size: 58, weight: .black, design: .rounded))
                 .italic()
                 .foregroundStyle(VR.brandGradient)
